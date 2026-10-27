@@ -1,0 +1,29 @@
+# Gradle
+.gradle/
+build/
+bin/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.class
+
+# Secrets
+application-local.yml
+.env
+*.pem
+*.key
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp
+*.bak

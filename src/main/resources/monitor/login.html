@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232F7BFF'/%3E%3Ctext x='32' y='45' font-family='Arial' font-size='38' font-weight='bold' fill='%23fff' text-anchor='middle'%3EG%3C/text%3E%3C/svg%3E">
+<title>Galibu · Acceso al monitor</title>
+<style>
+  :root {
+    --bg: #060B16;
+    --card: #0D1729;
+    --border: #1D2A44;
+    --text: #E8EEF9;
+    --muted: #8FA1BC;
+    --blue: #2F7BFF;
+    --blue-2: #5AA0FF;
+    --red: #EF4444;
+    --green: #22C55E;
+    --amber: #F59E0B;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(1000px 500px at 15% -10%, rgba(47, 123, 255, .22), transparent 60%),
+      radial-gradient(800px 400px at 100% 110%, rgba(34, 211, 238, .12), transparent 60%),
+      var(--bg);
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 390px;
+    background: linear-gradient(180deg, rgba(19, 31, 53, .96), rgba(13, 23, 41, .96));
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 34px 30px 26px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .04);
+  }
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; }
+  .logo {
+    width: 46px; height: 46px; border-radius: 14px;
+    display: grid; place-items: center;
+    font-weight: 800; font-size: 22px; color: #fff;
+    background: linear-gradient(140deg, var(--blue-2), var(--blue) 55%, #1354CC);
+    box-shadow: 0 8px 24px rgba(47, 123, 255, .45);
+  }
+  h1 { margin: 0; font-size: 20px; letter-spacing: .2px; }
+  h1 span { color: var(--muted); font-weight: 500; }
+  .sub { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; }
+  .field { margin-bottom: 15px; }
+  input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: #0A1322;
+    color: var(--text);
+    font-size: 14.5px;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(47, 123, 255, .18); }
+  button {
+    width: 100%;
+    margin-top: 6px;
+    padding: 12px;
+    border: 0;
+    border-radius: 12px;
+    background: linear-gradient(180deg, var(--blue-2), var(--blue));
+    color: #fff;
+    font-weight: 700;
+    font-size: 14.5px;
+    cursor: pointer;
+    box-shadow: 0 10px 26px rgba(47, 123, 255, .35);
+  }
+  button:hover { filter: brightness(1.06); }
+  .banner {
+    display: none;
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    border: 1px solid transparent;
+  }
+  .banner.show { display: block; }
+  .banner.error { background: rgba(239, 68, 68, .12); border-color: rgba(239, 68, 68, .35); color: #FECACA; }
+  .banner.ok { background: rgba(34, 197, 94, .12); border-color: rgba(34, 197, 94, .35); color: #BBF7D0; }
+  .foot { margin-top: 20px; font-size: 11px; color: var(--muted); text-align: center; line-height: 1.5; }
+  .foot code { color: #B7C6DE; }
+</style>
+</head>
+<body>
+  <form class="card" method="post" action="/monitor/login" autocomplete="on">
+    <div class="brand">
+      <div class="logo">G</div>
+      <div>
+        <h1>Galibu <span>Monitor</span></h1>
+        <p class="sub">Backend &amp; base de datos</p>
+      </div>
+    </div>
+
+    <div class="banner error" id="errorBanner">Usuario o contraseña incorrectos.</div>
+    <div class="banner ok" id="logoutBanner">Sesión cerrada correctamente.</div>
+
+    <div class="field">
+      <label for="username">Usuario</label>
+      <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+    </div>
+    <div class="field">
+      <label for="password">Contraseña</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+    </div>
+
+    <button type="submit">Entrar</button>
+
+    <p class="foot">
+      Acceso restringido · credenciales configurables en <code>application.yml</code>
+      (<code>app.monitor</code>) o con <code>MONITOR_USER</code> / <code>MONITOR_PASSWORD</code>.
+    </p>
+  </form>
+
+<script>
+  (function () {
+    var params = new URLSearchParams(location.search);
+    if (params.has('error')) document.getElementById('errorBanner').classList.add('show');
+    if (params.has('logout')) document.getElementById('logoutBanner').classList.add('show');
+  })();
+</script>
+</body>
+</html>

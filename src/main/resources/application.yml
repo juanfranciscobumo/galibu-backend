@@ -1,0 +1,69 @@
+server:
+  port: 8080
+  error:
+    # El monitor muestra el mensaje de error devuelto al cliente.
+    include-message: always
+
+spring:
+  config:
+    # Permite llaves locales de Bold sin escribirlas en application.yml.
+    import: optional:classpath:application-local.yml
+  autoconfigure:
+    # El monitor usa su propio usuario en memoria; la API se autentica con JWT.
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/galibu?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=America/Bogota}
+    username: ${DB_USER:galibu}
+    password: ${DB_PASSWORD:galibu_local_2026}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+app:
+  jwt:
+    # Minimo 256 bits. Cambiar en produccion via variable de entorno JWT_SECRET.
+    secret: ${JWT_SECRET:dev-only-change-me-please-use-a-long-random-secret-256bit-key}
+    access-minutes: 60
+    refresh-days: 30
+  auth:
+    google-client-ids: ${GOOGLE_CLIENT_IDS:692995531925-vih27djj3vof10iujkgv18c4qbdqrmag.apps.googleusercontent.com}
+  # Dashboard de monitoreo en http://<host>:8080/monitor
+  monitor:
+    username: ${MONITOR_USER:monitor}
+    password: ${MONITOR_PASSWORD:galibu_monitor_2026}
+  # Pasarela de pagos Bold (Links de Pago). Las llaves NO van en el repositorio.
+  # BOLD_API_KEY: llave de identidad; BOLD_SECRET_KEY: llave secreta (webhook).
+  bold:
+    enabled: ${BOLD_ENABLED:true}
+    api-key: ${BOLD_API_KEY:}
+    secret-key: ${BOLD_SECRET_KEY:}
+    api-url: ${BOLD_API_URL:https://integrations.api.bold.co}
+    # Debe ser https. La app intercepta esta URL en el WebView al terminar el pago.
+    callback-url: ${BOLD_CALLBACK_URL:https://galibu.app/bold/return}
+    # true SOLO con llaves de prueba (Bold firma los webhooks de prueba con secreto vacío).
+    test-mode: ${BOLD_TEST_MODE:false}
+    min-amount: 1000
+    max-amount: 5000000
+
+logging:
+  file:
+    name: logs/galibu-backend.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Rule for jobs and their subcollections (including messages and typing)
+    match /jobs/{jobId} {
+      // Professionals can browse OPEN jobs and unassigned negotiations;
+      // participants can read their own negotiation/accepted jobs.
+      allow read: if isAuthenticated() && (
+        resource.data.status == "OPEN" ||
+        (resource.data.status == "NEGOTIATING" && resource.data.professionalId == null) ||
+        resource.data.clientId == request.auth.uid ||
+        resource.data.professionalId == request.auth.uid
+      );
+
+      // Creating/updating/deleting jobs is restricted to involved participants.
+      allow write: if isAuthenticated() && (
+        (request.resource != null && (
+          request.resource.data.clientId == request.auth.uid ||
+          request.resource.data.professionalId == request.auth.uid
+        )) ||
+        (resource != null && (
+          resource.data.clientId == request.auth.uid ||
+          resource.data.professionalId == request.auth.uid
+        )) ||
+        // Allow marketplace progression from OPEN -> NEGOTIATING by authenticated professionals.
+        (resource != null && request.resource != null &&
+          resource.data.status == "OPEN" &&
+          request.resource.data.status == "NEGOTIATING" &&
+          request.resource.data.clientId == resource.data.clientId
+        )
+      );
+
+      match /bids/{bidId} {
+        // Bid owners can always read their own bids (for collectionGroup queries).
+        // Clients and assigned professionals of the job can also read bids.
+        allow read: if isAuthenticated() && (
+          resource.data.professionalId == request.auth.uid ||
+          get(/databases/$(database)/documents/jobs/$(jobId)).data.clientId == request.auth.uid ||
+          get(/databases/$(database)/documents/jobs/$(jobId)).data.professionalId == request.auth.uid
+        );
+
+        // Any authenticated professional can create bids on marketplace jobs.
+        allow create: if isAuthenticated() &&
+          request.resource.data.professionalId == request.auth.uid &&
+          get(/databases/$(database)/documents/jobs/$(jobId)).data.status in ["OPEN", "NEGOTIATING"];
+
+        // Client of the job or the professional who owns the bid can update/delete it.
+        allow update, delete: if isAuthenticated() && (
+          get(/databases/$(database)/documents/jobs/$(jobId)).data.clientId == request.auth.uid ||
+          resource.data.professionalId == request.auth.uid
+        );
+      }
+
+      match /chats/{messageId} {
+        // Tubo en tiempo real del chat app<->app. La app autentica contra el
+        // backend propio (JWT), no contra Firebase Auth, así que aquí no se
+        // puede exigir request.auth: los ids de job son UUIDs no adivinables
+        // y en escritura se valida estructura mínima y jobId de la ruta.
+        allow read: if true;
+        allow create: if request.resource.data.jobId == jobId
+          && request.resource.data.senderId is string
+          && request.resource.data.text is string;
+        allow update: if request.resource.data.jobId == jobId;
+        allow delete: if true;
+      }
+    }
+
+    // Rule for typing collection (indicador "escribiendo..."; mismo caso que chats).
+    match /typing/{jobId} {
+      allow read, write: if true;
+    }
+
+    // Default rules for other collections like users
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+  }
+}
