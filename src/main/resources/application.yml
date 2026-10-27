@@ -12,7 +12,7 @@ spring:
     # El monitor usa su propio usuario en memoria; la API se autentica con JWT.
     exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/galibu?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=America/Bogota}
+    url: ${DB_URL:jdbc:mysql://localhost:3306/galibu?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=America/Bogota&useUnicode=true&characterEncoding=UTF-8}
     username: ${DB_USER:galibu}
     password: ${DB_PASSWORD:galibu_local_2026}
     driver-class-name: com.mysql.cj.jdbc.Driver
