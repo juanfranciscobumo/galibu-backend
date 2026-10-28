@@ -1,5 +1,8 @@
 server:
   port: 8080
+  servlet:
+    session:
+      timeout: 30d
   error:
     # El monitor muestra el mensaje de error devuelto al cliente.
     include-message: always

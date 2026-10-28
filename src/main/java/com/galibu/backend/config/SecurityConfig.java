@@ -37,12 +37,20 @@ public class SecurityConfig {
             .password(new BCryptPasswordEncoder().encode(monitorPassword))
             .roles("MONITOR")
             .build();
+        InMemoryUserDetailsManager userDetailsManager = new InMemoryUserDetailsManager(user);
         http
             .securityMatcher("/monitor/**", "/api/monitor/**")
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/monitor/login").permitAll()
                 .anyRequest().hasRole("MONITOR"))
+            .sessionManagement(sm -> sm
+                .sessionFixation().migrateSession())
+            .rememberMe(rm -> rm
+                .key("galibu-monitor-remember-me-key")
+                .tokenValiditySeconds(30 * 24 * 60 * 60)
+                .alwaysRemember(true)
+                .userDetailsService(userDetailsManager))
             .formLogin(form -> form
                 .loginPage("/monitor/login")
                 .loginProcessingUrl("/monitor/login")
@@ -60,7 +68,7 @@ public class SecurityConfig {
                     response.sendRedirect("/monitor/login");
                 }
             }))
-            .userDetailsService(new InMemoryUserDetailsManager(user));
+            .userDetailsService(userDetailsManager);
         return http.build();
     }
 
