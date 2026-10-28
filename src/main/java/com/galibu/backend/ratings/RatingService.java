@@ -32,6 +32,10 @@ public class RatingService {
         if (!"IN_PROGRESS".equals(job.getStatus()) && !"COMPLETED".equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Solo se puede calificar un servicio en curso o finalizado");
         }
+        // Un usuario BOTH que se asignó a sí mismo no puede calificarse.
+        if (job.getProfessionalId() != null && job.getProfessionalId().equals(job.getClientId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "No puedes calificar tu propia solicitud");
+        }
         String ratedId;
         if (uid.equals(job.getClientId())) {
             if (job.getProfessionalId() == null || job.getProfessionalId().isBlank()) {

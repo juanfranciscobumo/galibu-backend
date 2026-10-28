@@ -51,6 +51,10 @@ public class BidService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo un profesional puede ofertar");
         }
         Job job = findJobOr404(jobId);
+        // Un usuario con ambos roles (BOTH) no puede ofertar en su propia solicitud.
+        if (uid.equals(job.getClientId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "No puedes ofertar en tu propia solicitud");
+        }
         if (!"OPEN".equals(job.getStatus()) && !"NEGOTIATING".equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud no admite ofertas en su estado actual");
         }
@@ -106,6 +110,10 @@ public class BidService {
     public BidDto counter(String uid, String bidId, CounterRequest req) {
         Bid bid = findBidOr404(bidId);
         Job job = findJobOr404(bid.getJobId());
+        // Bloquea contraofertas en solicitudes donde el mismo usuario es cliente y profesional.
+        if (bid.getProfessionalId() != null && bid.getProfessionalId().equals(job.getClientId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "No puedes contraofertar en tu propia solicitud");
+        }
         boolean isClient = uid.equals(job.getClientId());
         boolean isOwner = uid.equals(bid.getProfessionalId());
         if (!isClient && !isOwner) {
@@ -135,6 +143,11 @@ public class BidService {
     public BidDto accept(String uid, String bidId) {
         Bid bid = findBidOr404(bidId);
         Job job = findJobOr404(bid.getJobId());
+        // Bloquea ofertas históricas donde el mismo usuario es cliente y profesional.
+        if (bid.getProfessionalId() != null && bid.getProfessionalId().equals(job.getClientId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "No puedes aceptar tu propia oferta en tu propia solicitud");
+        }
         boolean isClient = uid.equals(job.getClientId());
         boolean isCounteredOwner = uid.equals(bid.getProfessionalId())
             && "COUNTERED_BY_CLIENT".equals(bid.getStatus());

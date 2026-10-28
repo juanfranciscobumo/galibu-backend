@@ -126,6 +126,10 @@ public class JobService {
         job.setSource(normalizeSource(req.getSource()));
         job.setPhotos(req.getPhotos());
         if (req.getProfessionalId() != null && !req.getProfessionalId().isBlank()) {
+            if (uid.equals(req.getProfessionalId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "No puedes asignarte a ti mismo como profesional de tu solicitud");
+            }
             User pro = users.findById(req.getProfessionalId()).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "Profesional no existe"));
             if (!"PROFESSIONAL".equals(pro.getRole()) && !"BOTH".equals(pro.getRole())) {
