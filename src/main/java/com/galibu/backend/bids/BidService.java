@@ -50,6 +50,9 @@ public class BidService {
         if (!"PROFESSIONAL".equals(user.getRole()) && !"BOTH".equals(user.getRole())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo un profesional puede ofertar");
         }
+        if (!user.isVerified() || !"VERIFIED".equalsIgnoreCase(user.getVerificationStatus())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Debes verificar tu identidad para ofertar");
+        }
         Job job = findJobOr404(jobId);
         // Un usuario con ambos roles (BOTH) no puede ofertar en su propia solicitud.
         if (uid.equals(job.getClientId())) {

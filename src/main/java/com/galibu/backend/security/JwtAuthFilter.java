@@ -1,5 +1,7 @@
 package com.galibu.backend.security;
 
+import com.galibu.backend.users.User;
+import com.galibu.backend.users.UserRepository;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -17,9 +19,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final UserRepository users;
 
-    public JwtAuthFilter(JwtService jwtService) {
+    public JwtAuthFilter(JwtService jwtService, UserRepository users) {
         this.jwtService = jwtService;
+        this.users = users;
     }
 
     @Override
@@ -33,12 +37,26 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             String token = header.substring(7);
             try {
                 Claims claims = jwtService.parseValidAccessToken(token);
-                String role = claims.get("role", String.class);
+                String uid = claims.getSubject();
+                // El rol se resuelve siempre desde la base de datos para no quedar
+                // desactualizado tras una expansión de rol (addRole) aunque el JWT
+                // antiguo siga vivo dentro de su ventana de validez.
+                String role = null;
+                try {
+                    User user = users.findById(uid).orElse(null);
+                    if (user != null) {
+                        role = user.getRole();
+                    }
+                } catch (Exception ignored) {
+                }
+                if (role == null) {
+                    role = claims.get("role", String.class);
+                }
                 var authorities = role == null
                     ? List.<SimpleGrantedAuthority>of()
                     : List.of(new SimpleGrantedAuthority("ROLE_" + role));
                 var auth = new UsernamePasswordAuthenticationToken(
-                    claims.getSubject(), null, authorities);
+                    uid, null, authorities);
                 SecurityContextHolder.getContext().setAuthentication(auth);
             } catch (Exception ex) {
                 SecurityContextHolder.clearContext();

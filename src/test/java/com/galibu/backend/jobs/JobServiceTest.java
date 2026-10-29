@@ -158,6 +158,9 @@ class JobServiceTest {
         j.setProHourlyRate(50000.0);
         when(jobs.findById("j1")).thenReturn(Optional.of(j));
         when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+        User pro = client("pro-1");
+        pro.setRole("PROFESSIONAL");
+        when(users.findById("pro-1")).thenReturn(Optional.of(pro));
 
         JobDto accepted = service.acceptDirect("pro-1", "j1");
         assertEquals("ACCEPTED", accepted.getStatus());

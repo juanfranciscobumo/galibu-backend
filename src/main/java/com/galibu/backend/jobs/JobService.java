@@ -189,6 +189,10 @@ public class JobService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo el profesional asignado puede hacerlo");
         }
         if (isAssignedPro) {
+            User pro = users.findById(uid).orElse(null);
+            if (pro == null || !pro.isVerified() || !"VERIFIED".equalsIgnoreCase(pro.getVerificationStatus())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Debes verificar tu identidad para aceptar trabajos");
+            }
             // La tarifa de aceptación la paga el profesional (el cliente acepta gratis).
             wallet.chargeAcceptFee(uid, jobId, job.getTitle());
         }

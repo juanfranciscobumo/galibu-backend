@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.galibu.backend.auth.dto.UserDto;
+import com.galibu.backend.users.dto.PublicUserDto;
 import com.galibu.backend.users.dto.UpdateProfileRequest;
 import java.util.List;
 import java.util.Optional;
@@ -91,7 +92,7 @@ class UserServiceTest {
         when(users.findByRoleInOrderByNameAsc(List.of("PROFESSIONAL", "BOTH")))
             .thenReturn(List.of(pro, both, incomplete));
 
-        List<UserDto> result = service.professionals("p2");
+        List<PublicUserDto> result = service.professionals("p2");
 
         // p2 es el usuario que consulta y p3 no completó su perfil profesional.
         assertEquals(1, result.size());

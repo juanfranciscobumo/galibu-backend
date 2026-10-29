@@ -1,7 +1,9 @@
 package com.galibu.backend.users;
 
 import com.galibu.backend.auth.dto.UserDto;
+import com.galibu.backend.users.dto.PublicUserDto;
 import com.galibu.backend.users.dto.UpdateProfileRequest;
+import com.galibu.backend.users.dto.VerificationSubmitRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -56,13 +58,23 @@ public class UserController {
     }
 
     @GetMapping("/professionals")
-    public List<UserDto> professionals(Authentication auth) {
+    public List<PublicUserDto> professionals(Authentication auth) {
         return service.professionals(auth.getName());
     }
 
     @GetMapping("/{id}")
-    public UserDto getById(@PathVariable String id) {
+    public PublicUserDto getById(@PathVariable String id) {
         return service.getById(id);
+    }
+
+    @PostMapping("/me/verification")
+    public UserDto submitVerification(Authentication auth, @Valid @RequestBody VerificationSubmitRequest request) {
+        return service.submitVerification(auth.getName(), request);
+    }
+
+    @PostMapping("/me/verification/complete")
+    public UserDto completeVerification(Authentication auth) {
+        return service.completeVerification(auth.getName());
     }
 
     public record RoleRequest(@NotBlank String role) {
