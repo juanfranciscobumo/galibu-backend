@@ -79,15 +79,23 @@ class UserServiceTest {
     }
 
     @Test
-    void professionalsListsBothRoles() {
+    void professionalsListsCompleteProfilesAndExcludesCaller() {
         User pro = user("p1");
         pro.setRole("PROFESSIONAL");
+        pro.setWorkCategory("Plomería");
         User both = user("p2");
         both.setRole("BOTH");
+        both.setWorkCategory("Electricidad");
+        User incomplete = user("p3");
+        incomplete.setRole("BOTH");
         when(users.findByRoleInOrderByNameAsc(List.of("PROFESSIONAL", "BOTH")))
-            .thenReturn(List.of(pro, both));
+            .thenReturn(List.of(pro, both, incomplete));
 
-        assertEquals(2, service.professionals().size());
+        List<UserDto> result = service.professionals("p2");
+
+        // p2 es el usuario que consulta y p3 no completó su perfil profesional.
+        assertEquals(1, result.size());
+        assertEquals("p1", result.get(0).getId());
     }
 
     @Test

@@ -56,8 +56,8 @@ public class UserController {
     }
 
     @GetMapping("/professionals")
-    public List<UserDto> professionals() {
-        return service.professionals();
+    public List<UserDto> professionals(Authentication auth) {
+        return service.professionals(auth.getName());
     }
 
     @GetMapping("/{id}")

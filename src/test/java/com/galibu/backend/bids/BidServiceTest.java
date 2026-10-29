@@ -151,6 +151,23 @@ class BidServiceTest {
     }
 
     @Test
+    void submitRejectsOwnJobForBothRole() {
+        User both = pro("both-1");
+        both.setRole("BOTH");
+        Job own = job("job-1");
+        own.setClientId("both-1");
+        when(users.findById("both-1")).thenReturn(Optional.of(both));
+        when(jobs.findById("job-1")).thenReturn(Optional.of(own));
+
+        CreateBidRequest req = new CreateBidRequest();
+        req.setAmount(1000.0);
+        ResponseStatusException conflict = assertThrows(ResponseStatusException.class,
+            () -> service.submit("both-1", "job-1", req));
+        assertEquals(HttpStatus.CONFLICT, conflict.getStatusCode());
+        verify(bids, never()).save(any(com.galibu.backend.bids.Bid.class));
+    }
+
+    @Test
     void counterSetsStatusByRole() {
         when(bids.findById("bid-1")).thenReturn(Optional.of(bid("bid-1", "PENDING")));
         when(jobs.findById("job-1")).thenReturn(Optional.of(job("job-1")));

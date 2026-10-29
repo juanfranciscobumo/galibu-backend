@@ -55,8 +55,13 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public List<UserDto> professionals() {
+    public List<UserDto> professionals(String uid) {
         return users.findByRoleInOrderByNameAsc(List.of("PROFESSIONAL", "BOTH")).stream()
+            // El directorio no debe incluir al usuario que consulta (su perfil ya
+            // está en su propia sesión) ni cuentas BOTH que nunca completaron el
+            // perfil profesional (sin categoría).
+            .filter(u -> uid == null || !uid.equals(u.getId()))
+            .filter(u -> u.getWorkCategory() != null && !u.getWorkCategory().isBlank())
             .map(UserDto::from)
             .toList();
     }
