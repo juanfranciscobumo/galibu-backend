@@ -121,7 +121,8 @@ public class UserService {
     public void changePassword(String uid, String currentPassword, String newPassword) {
         User user = findOr404(uid);
         if (user.getPasswordHash() == null) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tu cuenta usa Google: inicia sesión con Google");
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Tu cuenta está vinculada a Google. Cambia tu contraseña desde tu cuenta de Google.");
         }
         if (newPassword == null || newPassword.length() < 8) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La nueva contraseña debe tener al menos 8 caracteres");

@@ -17,6 +17,7 @@ public class UserDto {
     private String email;
     private String phone;
     private String role;
+    private String authProvider;
     private boolean verified;
     private float rating;
     private int completedJobs;
@@ -38,6 +39,7 @@ public class UserDto {
         dto.setEmail(user.getEmail());
         dto.setPhone(user.getPhone() == null ? "" : user.getPhone());
         dto.setRole(user.getRole());
+        dto.setAuthProvider(user.getAuthProvider());
         dto.setVerified(user.isVerified());
         dto.setRating(user.getRating());
         dto.setCompletedJobs(user.getCompletedJobs());
