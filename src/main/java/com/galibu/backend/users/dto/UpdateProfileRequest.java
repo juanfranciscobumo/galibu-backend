@@ -38,9 +38,4 @@ public class UpdateProfileRequest {
 
     @Size(max = 600)
     private String workDescription;
-
-    @Size(max = 60)
-    private String documentType;
-
-    private String documentPhotoUrl;
 }

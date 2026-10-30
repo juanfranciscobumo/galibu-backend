@@ -50,6 +50,9 @@ public class User {
     @Column(name = "document_type", length = 60)
     private String documentType;
 
+    @Column(name = "document_number", length = 20)
+    private String documentNumber;
+
     @Column(name = "document_photo_url", columnDefinition = "TEXT")
     private String documentPhotoUrl;
 

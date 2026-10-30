@@ -68,8 +68,8 @@ public class AuthService {
         user.setDepartment(TextUtils.capitalizeFirst(req.getDepartment()));
         user.setMunicipality(TextUtils.capitalizeFirst(req.getMunicipality()));
         user.setAddress(TextUtils.capitalizeFirst(req.getAddress()));
-        user.setVerified("CLIENT".equals(role));
-        user.setVerificationStatus("CLIENT".equals(role) ? "VERIFIED" : "NOT_STARTED");
+        user.setVerified(true);
+        user.setVerificationStatus("VERIFIED");
         user.setBalance(WalletService.INITIAL_BALANCE);
         users.save(user);
         return tokensFor(user);
@@ -107,8 +107,8 @@ public class AuthService {
             user.setAuthProvider("GOOGLE");
             user.setRole(role);
             user.setProfilePhotoUrl((String) payload.get("picture"));
-            user.setVerified("CLIENT".equals(role));
-            user.setVerificationStatus("CLIENT".equals(role) ? "VERIFIED" : "NOT_STARTED");
+            user.setVerified(true);
+            user.setVerificationStatus("VERIFIED");
             user.setBalance(WalletService.INITIAL_BALANCE);
             users.save(user);
         } else if (!"GOOGLE".equals(user.getAuthProvider())) {

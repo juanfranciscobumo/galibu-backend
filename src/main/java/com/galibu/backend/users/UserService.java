@@ -7,7 +7,6 @@ import com.galibu.backend.jobs.JobRepository;
 import com.galibu.backend.ratings.RatingRepository;
 import com.galibu.backend.users.dto.PublicUserDto;
 import com.galibu.backend.users.dto.UpdateProfileRequest;
-import com.galibu.backend.users.dto.VerificationSubmitRequest;
 import com.galibu.backend.wallet.WalletTransactionRepository;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -101,12 +100,6 @@ public class UserService {
         if (req.getWorkDescription() != null) {
             user.setWorkDescription(TextUtils.capitalizeFirst(req.getWorkDescription()));
         }
-        if (req.getDocumentType() != null) {
-            user.setDocumentType(req.getDocumentType());
-        }
-        if (req.getDocumentPhotoUrl() != null) {
-            user.setDocumentPhotoUrl(req.getDocumentPhotoUrl());
-        }
         return UserDto.from(users.save(user));
     }
 
@@ -118,42 +111,10 @@ public class UserService {
         }
         User user = findOr404(uid);
         if (!upper.equals(user.getRole())) {
-            boolean wasClient = "CLIENT".equals(user.getRole());
             user.setRole("BOTH");
-            // Al pasar de CLIENT a BOTH (se agrega capacidad profesional) se reinicia
-            // la verificación: un cliente que nunca subió documentos no queda verificado
-            // como profesional. Nunca se reinicia en la dirección PROFESSIONAL->CLIENT.
-            if (wasClient) {
-                user.setVerified(false);
-                user.setVerificationStatus("NOT_STARTED");
-                user.setDocumentType(null);
-                user.setDocumentPhotoUrl(null);
-            }
             user = users.save(user);
         }
         return UserDto.from(user);
-    }
-
-    @Transactional
-    public UserDto submitVerification(String uid, VerificationSubmitRequest req) {
-        User user = findOr404(uid);
-        if (req.getDocumentType() != null) {
-            user.setDocumentType(req.getDocumentType());
-        }
-        if (req.getDocumentPhotoUrl() != null) {
-            user.setDocumentPhotoUrl(req.getDocumentPhotoUrl());
-        }
-        user.setVerified(false);
-        user.setVerificationStatus("PENDING");
-        return UserDto.from(users.save(user));
-    }
-
-    @Transactional
-    public UserDto completeVerification(String uid) {
-        User user = findOr404(uid);
-        user.setVerified(true);
-        user.setVerificationStatus("VERIFIED");
-        return UserDto.from(users.save(user));
     }
 
     @Transactional
