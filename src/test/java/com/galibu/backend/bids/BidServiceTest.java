@@ -40,6 +40,9 @@ class BidServiceTest {
     @Mock
     private WalletService wallet;
 
+    @Mock
+    private com.galibu.backend.chat.ChatService chat;
+
     @InjectMocks
     private BidService service;
 

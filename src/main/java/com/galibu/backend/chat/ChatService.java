@@ -62,6 +62,24 @@ public class ChatService {
         return ChatMessageDto.from(messages.save(m));
     }
 
+    /**
+     * Mensaje automático del sistema. No lo envía ninguno de los participantes,
+     * por eso se persiste directamente y ambos lo reciben por el polling del chat.
+     */
+    @Transactional
+    public void postSystemMessage(String jobId, String senderName, String text) {
+        ChatMessage m = new ChatMessage();
+        m.setId(UUID.randomUUID().toString());
+        m.setJobId(jobId);
+        m.setSenderId("system");
+        m.setSenderName(senderName == null || senderName.isBlank() ? "Sistema" : senderName);
+        m.setText(text);
+        m.setType("system");
+        m.setTimestamp(System.currentTimeMillis());
+        m.setRead(false);
+        messages.save(m);
+    }
+
     @Transactional
     public void markRead(String uid, String jobId) {
         requireParticipant(uid, jobId);

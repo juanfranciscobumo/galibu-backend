@@ -2,6 +2,7 @@ package com.galibu.backend.bids;
 
 import com.galibu.backend.bids.dto.BidDto;
 import com.galibu.backend.bids.dto.CreateBidRequest;
+import com.galibu.backend.chat.ChatService;
 import com.galibu.backend.jobs.Job;
 import com.galibu.backend.jobs.JobRepository;
 import com.galibu.backend.jobs.dto.CounterRequest;
@@ -21,12 +22,15 @@ public class BidService {
     private final JobRepository jobs;
     private final UserRepository users;
     private final WalletService wallet;
+    private final ChatService chat;
 
-    public BidService(BidRepository bids, JobRepository jobs, UserRepository users, WalletService wallet) {
+    public BidService(BidRepository bids, JobRepository jobs, UserRepository users,
+            WalletService wallet, ChatService chat) {
         this.bids = bids;
         this.jobs = jobs;
         this.users = users;
         this.wallet = wallet;
+        this.chat = chat;
     }
 
     @Transactional(readOnly = true)
@@ -176,6 +180,9 @@ public class BidService {
         job.setProfessionalName(bid.getProfessionalName());
         job.setFinalPrice(bid.getAmount());
         jobs.save(job);
+        chat.postSystemMessage(job.getId(), "Sistema",
+            "¡Presupuesto pactado en $" + bid.getAmount()
+                + " COP! Chat seguro iniciado. Coordinen los detalles aquí.");
         return BidDto.from(saved);
     }
 

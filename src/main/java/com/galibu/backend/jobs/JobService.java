@@ -3,6 +3,7 @@ package com.galibu.backend.jobs;
 import com.galibu.backend.common.TextUtils;
 import com.galibu.backend.bids.Bid;
 import com.galibu.backend.bids.BidRepository;
+import com.galibu.backend.chat.ChatService;
 import com.galibu.backend.jobs.dto.CounterRequest;
 import com.galibu.backend.jobs.dto.CreateJobRequest;
 import com.galibu.backend.jobs.dto.JobDto;
@@ -27,14 +28,17 @@ public class JobService {
     private final BidRepository bids;
     private final com.galibu.backend.ratings.RatingService ratingService;
     private final WalletService wallet;
+    private final ChatService chat;
 
     public JobService(JobRepository jobs, UserRepository users, BidRepository bids,
-            com.galibu.backend.ratings.RatingService ratingService, WalletService wallet) {
+            com.galibu.backend.ratings.RatingService ratingService, WalletService wallet,
+            ChatService chat) {
         this.jobs = jobs;
         this.users = users;
         this.bids = bids;
         this.ratingService = ratingService;
         this.wallet = wallet;
+        this.chat = chat;
     }
 
     @Transactional(readOnly = true)
@@ -145,14 +149,19 @@ public class JobService {
     }
 
     @Transactional
-    public JobDto cancel(String uid, String jobId) {
+    public JobDto cancel(String uid, String jobId, String reason) {
         Job job = findOr404(jobId);
         requireParticipant(uid, job);
         if ("COMPLETED".equals(job.getStatus()) || "CANCELLED".equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud ya está cerrada");
         }
+        User actor = findUserOr404(uid);
         job.setStatus("CANCELLED");
-        return JobDto.from(jobs.save(job));
+        Job saved = jobs.save(job);
+        String suffix = reason == null || reason.isBlank() ? "" : ": " + reason.trim();
+        chat.postSystemMessage(jobId, "Sistema",
+            "⚠️ Este trabajo ha sido cancelado por " + actor.getName() + suffix + ".");
+        return JobDto.from(saved);
     }
 
     @Transactional
@@ -174,7 +183,11 @@ public class JobService {
         job.setStatus("NEGOTIATING");
         job.setCounterOfferAmount(req.getAmount());
         job.setCounterOfferSender(uid.equals(job.getClientId()) ? "CLIENT" : "PROFESSIONAL");
-        return JobDto.from(jobs.save(job));
+        Job saved = jobs.save(job);
+        String who = uid.equals(job.getClientId()) ? "El cliente" : "El profesional";
+        chat.postSystemMessage(jobId, "Sistema",
+            "¡" + who + " propuso una nueva tarifa de $" + formatAmount(req.getAmount()) + "/h!");
+        return JobDto.from(saved);
     }
 
     @Transactional
@@ -200,7 +213,10 @@ public class JobService {
         job.setStatus("ACCEPTED");
         job.setFinalPrice(price);
         job.setCounterOfferSender(null);
-        return JobDto.from(jobs.save(job));
+        Job saved = jobs.save(job);
+        chat.postSystemMessage(jobId, "Sistema",
+            "¡El profesional aceptó la solicitud de contratación directa! Chat seguro iniciado.");
+        return JobDto.from(saved);
     }
 
     @Transactional
@@ -221,7 +237,10 @@ public class JobService {
         }
         job.setStatus("IN_PROGRESS");
         job.setCounterOfferSender(null);
-        return JobDto.from(jobs.save(job));
+        Job saved = jobs.save(job);
+        chat.postSystemMessage(jobId, "Sistema",
+            "¡El profesional inició el servicio! El trabajo está en progreso.");
+        return JobDto.from(saved);
     }
 
     @Transactional
@@ -240,6 +259,8 @@ public class JobService {
         job.setStatus("COMPLETED");
         job.setCounterOfferSender(null);
         jobs.save(job);
+        chat.postSystemMessage(jobId, "Sistema",
+            "¡Servicio finalizado! Ya puedes calificar el trabajo realizado.");
         // Calificación de quien finaliza (cliente o profesional) en la misma operación.
         try {
             ratingService.rate(uid, jobId,
@@ -276,6 +297,11 @@ public class JobService {
 
     private String norm(String value) {
         return value == null ? "" : value.trim().toLowerCase();
+    }
+
+    /** Montos enteros sin decimales (50000.0 -> 50000) para los mensajes del chat. */
+    private String formatAmount(double value) {
+        return value == Math.rint(value) ? String.valueOf((long) value) : String.valueOf(value);
     }
 
     private String normalizeSource(String value) {

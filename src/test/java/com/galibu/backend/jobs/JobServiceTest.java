@@ -44,6 +44,9 @@ class JobServiceTest {
     @Mock
     private WalletService wallet;
 
+    @Mock
+    private com.galibu.backend.chat.ChatService chat;
+
     @InjectMocks
     private JobService service;
 
@@ -118,17 +121,47 @@ class JobServiceTest {
         Job j = job("j1");
         when(jobs.findById("j1")).thenReturn(Optional.of(j));
         when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+        when(users.findById("client-1")).thenReturn(Optional.of(client("client-1")));
 
-        assertEquals("CANCELLED", service.cancel("client-1", "j1").getStatus());
+        assertEquals("CANCELLED", service.cancel("client-1", "j1", null).getStatus());
 
         ResponseStatusException forbidden = assertThrows(ResponseStatusException.class,
-            () -> service.cancel("other", "j1"));
+            () -> service.cancel("other", "j1", null));
         assertEquals(HttpStatus.FORBIDDEN, forbidden.getStatusCode());
 
         j.setStatus("COMPLETED");
         ResponseStatusException conflict = assertThrows(ResponseStatusException.class,
-            () -> service.cancel("client-1", "j1"));
+            () -> service.cancel("client-1", "j1", null));
         assertEquals(HttpStatus.CONFLICT, conflict.getStatusCode());
+    }
+
+    @Test
+    void startServicePostsSystemChatMessage() {
+        Job j = job("j1");
+        j.setStatus("ACCEPTED");
+        j.setProfessionalId("pro-1");
+        when(jobs.findById("j1")).thenReturn(Optional.of(j));
+        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.startService("pro-1", "j1");
+
+        verify(chat).postSystemMessage(eq("j1"), eq("Sistema"),
+            org.mockito.ArgumentMatchers.contains("inició el servicio"));
+    }
+
+    @Test
+    void cancelPostsReasonInSystemChatMessage() {
+        Job j = job("j1");
+        j.setStatus("ACCEPTED");
+        j.setProfessionalId("pro-1");
+        when(jobs.findById("j1")).thenReturn(Optional.of(j));
+        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+        when(users.findById("client-1")).thenReturn(Optional.of(client("client-1")));
+
+        service.cancel("client-1", "j1", "no era lo acordado");
+
+        verify(chat).postSystemMessage(eq("j1"), eq("Sistema"),
+            org.mockito.ArgumentMatchers.contains("no era lo acordado"));
     }
 
     @Test

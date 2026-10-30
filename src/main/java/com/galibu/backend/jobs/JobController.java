@@ -58,8 +58,11 @@ public class JobController {
     }
 
     @PatchMapping("/{id}/cancel")
-    public JobDto cancel(Authentication auth, @PathVariable String id) {
-        return service.cancel(auth.getName(), id);
+    public JobDto cancel(
+        Authentication auth, @PathVariable String id,
+        @RequestParam(required = false) String reason
+    ) {
+        return service.cancel(auth.getName(), id, reason);
     }
 
     @DeleteMapping("/{id}")
