@@ -6,6 +6,7 @@ import com.galibu.backend.chat.ChatService;
 import com.galibu.backend.jobs.Job;
 import com.galibu.backend.jobs.JobRepository;
 import com.galibu.backend.jobs.dto.CounterRequest;
+import com.galibu.backend.notifications.NotificationService;
 import com.galibu.backend.users.User;
 import com.galibu.backend.users.UserRepository;
 import com.galibu.backend.wallet.WalletService;
@@ -23,14 +24,16 @@ public class BidService {
     private final UserRepository users;
     private final WalletService wallet;
     private final ChatService chat;
+    private final NotificationService notifications;
 
     public BidService(BidRepository bids, JobRepository jobs, UserRepository users,
-            WalletService wallet, ChatService chat) {
+            WalletService wallet, ChatService chat, NotificationService notifications) {
         this.bids = bids;
         this.jobs = jobs;
         this.users = users;
         this.wallet = wallet;
         this.chat = chat;
+        this.notifications = notifications;
     }
 
     @Transactional(readOnly = true)
@@ -183,6 +186,10 @@ public class BidService {
         chat.postSystemMessage(job.getId(), "Sistema",
             "¡Presupuesto pactado en $" + bid.getAmount()
                 + " COP! Chat seguro iniciado. Coordinen los detalles aquí.");
+        notifications.notifyUser(bid.getProfessionalId(), "Oferta aceptada",
+            "El cliente aceptó tu oferta de $" + bid.getAmount() + " COP para '" + job.getTitle() + "'.", job.getId());
+        notifications.notifyUser(job.getClientId(), "Oferta aceptada",
+            "Has aceptado la oferta de " + bid.getProfessionalName() + " para '" + job.getTitle() + "'.", job.getId());
         return BidDto.from(saved);
     }
 

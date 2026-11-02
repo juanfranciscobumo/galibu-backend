@@ -7,6 +7,7 @@ import com.galibu.backend.chat.ChatService;
 import com.galibu.backend.jobs.dto.CounterRequest;
 import com.galibu.backend.jobs.dto.CreateJobRequest;
 import com.galibu.backend.jobs.dto.JobDto;
+import com.galibu.backend.notifications.NotificationService;
 import com.galibu.backend.users.User;
 import com.galibu.backend.users.UserRepository;
 import com.galibu.backend.wallet.WalletService;
@@ -29,16 +30,18 @@ public class JobService {
     private final com.galibu.backend.ratings.RatingService ratingService;
     private final WalletService wallet;
     private final ChatService chat;
+    private final NotificationService notifications;
 
     public JobService(JobRepository jobs, UserRepository users, BidRepository bids,
             com.galibu.backend.ratings.RatingService ratingService, WalletService wallet,
-            ChatService chat) {
+            ChatService chat, NotificationService notifications) {
         this.jobs = jobs;
         this.users = users;
         this.bids = bids;
         this.ratingService = ratingService;
         this.wallet = wallet;
         this.chat = chat;
+        this.notifications = notifications;
     }
 
     @Transactional(readOnly = true)
@@ -216,6 +219,12 @@ public class JobService {
         Job saved = jobs.save(job);
         chat.postSystemMessage(jobId, "Sistema",
             "¡El profesional aceptó la solicitud de contratación directa! Chat seguro iniciado.");
+        notifications.notifyUser(job.getClientId(), "Solicitud aceptada",
+            "El profesional aceptó tu solicitud de '" + job.getTitle() + "'.", jobId);
+        if (job.getProfessionalId() != null) {
+            notifications.notifyUser(job.getProfessionalId(), "Contratación iniciada",
+                "Has sido contratado para '" + job.getTitle() + "'.", jobId);
+        }
         return JobDto.from(saved);
     }
 
@@ -240,6 +249,8 @@ public class JobService {
         Job saved = jobs.save(job);
         chat.postSystemMessage(jobId, "Sistema",
             "¡El profesional inició el servicio! El trabajo está en progreso.");
+        notifications.notifyUser(job.getClientId(), "Servicio iniciado",
+            "El profesional ha comenzado el trabajo '" + job.getTitle() + "'.", jobId);
         return JobDto.from(saved);
     }
 
@@ -261,6 +272,12 @@ public class JobService {
         jobs.save(job);
         chat.postSystemMessage(jobId, "Sistema",
             "¡Servicio finalizado! Ya puedes calificar el trabajo realizado.");
+        notifications.notifyUser(job.getClientId(), "Servicio finalizado",
+            "El trabajo '" + job.getTitle() + "' ha sido finalizado. Califica al profesional.", jobId);
+        if (job.getProfessionalId() != null) {
+            notifications.notifyUser(job.getProfessionalId(), "Servicio finalizado",
+                "El trabajo '" + job.getTitle() + "' ha sido finalizado. Califica al cliente.", jobId);
+        }
         // Calificación de quien finaliza (cliente o profesional) en la misma operación.
         try {
             ratingService.rate(uid, jobId,
