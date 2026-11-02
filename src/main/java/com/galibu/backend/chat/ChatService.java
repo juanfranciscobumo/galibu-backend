@@ -4,6 +4,7 @@ import com.galibu.backend.chat.dto.ChatMessageDto;
 import com.galibu.backend.chat.dto.CreateChatMessageRequest;
 import com.galibu.backend.jobs.Job;
 import com.galibu.backend.jobs.JobRepository;
+import com.galibu.backend.notifications.NotificationService;
 import com.galibu.backend.users.User;
 import com.galibu.backend.users.UserRepository;
 import java.util.List;
@@ -19,11 +20,14 @@ public class ChatService {
     private final ChatMessageRepository messages;
     private final JobRepository jobs;
     private final UserRepository users;
+    private final NotificationService notifications;
 
-    public ChatService(ChatMessageRepository messages, JobRepository jobs, UserRepository users) {
+    public ChatService(ChatMessageRepository messages, JobRepository jobs, UserRepository users,
+            NotificationService notifications) {
         this.messages = messages;
         this.jobs = jobs;
         this.users = users;
+        this.notifications = notifications;
     }
 
     private Job requireParticipant(String uid, String jobId) {
@@ -47,7 +51,7 @@ public class ChatService {
 
     @Transactional
     public ChatMessageDto send(String uid, String jobId, CreateChatMessageRequest req) {
-        requireParticipant(uid, jobId);
+        Job job = requireParticipant(uid, jobId);
         User user = users.findById(uid).orElseThrow(() ->
             new ResponseStatusException(HttpStatus.NOT_FOUND, "Usuario no existe"));
         ChatMessage m = new ChatMessage();
@@ -59,7 +63,16 @@ public class ChatService {
         m.setType(req.getType() == null || req.getType().isBlank() ? "text" : req.getType());
         m.setTimestamp(System.currentTimeMillis());
         m.setRead(false);
-        return ChatMessageDto.from(messages.save(m));
+        ChatMessage saved = messages.save(m);
+        // Notificar al otro participante por push (el chat también usa polling de 5 s).
+        String otherId = uid.equals(job.getClientId()) ? job.getProfessionalId() : job.getClientId();
+        if (otherId != null && !otherId.isBlank()) {
+            String preview = req.getText() == null ? "" : req.getText();
+            if (preview.length() > 80) preview = preview.substring(0, 77) + "...";
+            notifications.notifyUser(otherId, "Nuevo mensaje",
+                user.getName() + ": " + preview, jobId);
+        }
+        return ChatMessageDto.from(saved);
     }
 
     /**

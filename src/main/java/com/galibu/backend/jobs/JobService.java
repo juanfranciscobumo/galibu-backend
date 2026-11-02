@@ -149,11 +149,24 @@ public class JobService {
             job.setStatus("NEGOTIATING");
         }
         Job saved = jobs.save(job);
-        if (saved.getProfessionalId() != null && !saved.getProfessionalId().isBlank()
-                && !"OPEN".equals(saved.getStatus())) {
-            // Contratación directa: avisar al profesional asignado.
+        boolean directHire = saved.getProfessionalId() != null && !saved.getProfessionalId().isBlank();
+        if (directHire) {
             notifications.notifyUser(saved.getProfessionalId(), "Nueva contratación directa",
                 "Te han contratado directamente para '" + saved.getTitle() + "'. Revisa la solicitud.", saved.getId());
+        } else {
+            // Nueva solicitud abierta: avisar a profesionales con categoría compatible
+            // (o sin categoría definida) para que la vean al instante.
+            String cat = saved.getCategory() == null ? "" : saved.getCategory().trim().toLowerCase();
+            for (User pro : users.findByRoleInOrderByNameAsc(List.of("PROFESSIONAL", "BOTH"))) {
+                if (pro.getId().equals(saved.getClientId())) continue;
+                String proCat = pro.getWorkCategory() == null ? "" : pro.getWorkCategory().trim().toLowerCase();
+                boolean match = cat.isBlank() || proCat.isBlank()
+                    || proCat.contains(cat) || cat.contains(proCat);
+                if (match) {
+                    notifications.notifyUser(pro.getId(), "Nueva solicitud disponible",
+                        "Nueva solicitud: '" + saved.getTitle() + "' en " + saved.getMunicipality() + ".", saved.getId());
+                }
+            }
         }
         return JobDto.from(saved);
     }
