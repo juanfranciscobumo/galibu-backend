@@ -261,11 +261,18 @@ public class JobService {
         if (job.getProfessionalId() == null || job.getProfessionalId().isBlank()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud aún no tiene profesional asignado");
         }
-        if (!"IN_PROGRESS".equals(job.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Solo se puede finalizar un servicio en progreso");
-        }
         if (stars < 1 || stars > 5) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La calificación es obligatoria (1 a 5 estrellas)");
+        }
+        // El servicio se cierra una sola vez: si el otro participante ya lo
+        // finalizó, este segundo cierre solo registra su calificación (sin
+        // repetir mensajes de sistema ni notificaciones).
+        if ("COMPLETED".equals(job.getStatus())) {
+            rateIgnoringDuplicates(uid, jobId, stars, comment);
+            return JobDto.from(findOr404(jobId));
+        }
+        if (!"IN_PROGRESS".equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Solo se puede finalizar un servicio en progreso");
         }
         job.setStatus("COMPLETED");
         job.setCounterOfferSender(null);
@@ -279,6 +286,15 @@ public class JobService {
                 "El trabajo '" + job.getTitle() + "' ha sido finalizado. Califica al cliente.", jobId);
         }
         // Calificación de quien finaliza (cliente o profesional) en la misma operación.
+        rateIgnoringDuplicates(uid, jobId, stars, comment);
+        return JobDto.from(findOr404(jobId));
+    }
+
+    /**
+     * Registra la calificación de quien cierra el servicio. Si ya había
+     * calificado (reintento), el conflicto se ignora: la operación es idempotente.
+     */
+    private void rateIgnoringDuplicates(String uid, String jobId, int stars, String comment) {
         try {
             ratingService.rate(uid, jobId,
                 new com.galibu.backend.ratings.dto.CreateRatingRequest(stars, comment));
@@ -286,9 +302,7 @@ public class JobService {
             if (ex.getStatusCode() != HttpStatus.CONFLICT) {
                 throw ex;
             }
-            // Ya calificado antes (reintento): se completa igual.
         }
-        return JobDto.from(findOr404(jobId));
     }
 
     /**

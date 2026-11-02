@@ -352,9 +352,11 @@ class JobServiceTest {
         assertEquals("COMPLETED", finished.getStatus());
         verify(ratingService).rate(eq("pro-1"), eq("j1"), any(com.galibu.backend.ratings.dto.CreateRatingRequest.class));
 
-        ResponseStatusException notInProgress = assertThrows(ResponseStatusException.class,
-            () -> service.finishService("pro-1", "j1", 5, null));
-        assertEquals(HttpStatus.CONFLICT, notInProgress.getStatusCode());
+        // Segundo participante: el servicio ya está COMPLETED, solo se registra
+        // su calificación (sin repetir mensajes de sistema ni notificaciones).
+        JobDto finishedByClient = service.finishService("client-1", "j1", 4, "Buen profesional");
+        assertEquals("COMPLETED", finishedByClient.getStatus());
+        verify(ratingService).rate(eq("client-1"), eq("j1"), any(com.galibu.backend.ratings.dto.CreateRatingRequest.class));
     }
 
     @Test
