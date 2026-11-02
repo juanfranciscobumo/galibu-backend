@@ -34,6 +34,9 @@ class RatingServiceTest {
     @Mock
     private UserRepository users;
 
+    @Mock
+    private com.galibu.backend.notifications.NotificationService notifications;
+
     @InjectMocks
     private RatingService service;
 

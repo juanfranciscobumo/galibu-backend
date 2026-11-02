@@ -148,7 +148,14 @@ public class JobService {
                     ? pro.getName() : req.getProfessionalName());
             job.setStatus("NEGOTIATING");
         }
-        return JobDto.from(jobs.save(job));
+        Job saved = jobs.save(job);
+        if (saved.getProfessionalId() != null && !saved.getProfessionalId().isBlank()
+                && !"OPEN".equals(saved.getStatus())) {
+            // Contratación directa: avisar al profesional asignado.
+            notifications.notifyUser(saved.getProfessionalId(), "Nueva contratación directa",
+                "Te han contratado directamente para '" + saved.getTitle() + "'. Revisa la solicitud.", saved.getId());
+        }
+        return JobDto.from(saved);
     }
 
     @Transactional
@@ -164,6 +171,11 @@ public class JobService {
         String suffix = reason == null || reason.isBlank() ? "" : ": " + reason.trim();
         chat.postSystemMessage(jobId, "Sistema",
             "⚠️ Este trabajo ha sido cancelado por " + actor.getName() + suffix + ".");
+        String otherId = uid.equals(job.getClientId()) ? job.getProfessionalId() : job.getClientId();
+        if (otherId != null && !otherId.isBlank()) {
+            notifications.notifyUser(otherId, "Servicio cancelado",
+                "La solicitud '" + job.getTitle() + "' ha sido cancelada por " + actor.getName() + ".", jobId);
+        }
         return JobDto.from(saved);
     }
 
@@ -190,6 +202,12 @@ public class JobService {
         String who = uid.equals(job.getClientId()) ? "El cliente" : "El profesional";
         chat.postSystemMessage(jobId, "Sistema",
             "¡" + who + " propuso una nueva tarifa de $" + formatAmount(req.getAmount()) + "/h!");
+        String otherId = uid.equals(job.getClientId()) ? job.getProfessionalId() : job.getClientId();
+        if (otherId != null && !otherId.isBlank()) {
+            notifications.notifyUser(otherId, "Nueva contraoferta",
+                who + " propuso una nueva tarifa de $" + formatAmount(req.getAmount())
+                    + " para '" + job.getTitle() + "'.", jobId);
+        }
         return JobDto.from(saved);
     }
 
@@ -234,7 +252,10 @@ public class JobService {
         requireAssignedProfessional(uid, job);
         job.setStatus("CANCELLED");
         job.setCounterOfferSender(null);
-        return JobDto.from(jobs.save(job));
+        Job saved = jobs.save(job);
+        notifications.notifyUser(job.getClientId(), "Contratación rechazada",
+            "El profesional rechazó la contratación directa para '" + job.getTitle() + "'.", jobId);
+        return JobDto.from(saved);
     }
 
     @Transactional

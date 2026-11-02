@@ -110,6 +110,9 @@ public class BidService {
             job.setCounterOfferSender("PROFESSIONAL");
             jobs.save(job);
         }
+        notifications.notifyUser(job.getClientId(), "Nueva oferta recibida",
+            user.getName() + " envió una oferta de $" + req.getAmount()
+                + " COP para '" + job.getTitle() + "'.", jobId);
         return BidDto.from(saved);
     }
 
@@ -132,7 +135,12 @@ public class BidService {
         bid.setAmount(req.getAmount());
         bid.setLastCounterOfferAmount(req.getAmount());
         bid.setStatus(isClient ? "COUNTERED_BY_CLIENT" : "COUNTERED_BY_PROFESSIONAL");
-        return BidDto.from(bids.save(bid));
+        Bid saved = bids.save(bid);
+        String who = isClient ? "El cliente" : "El profesional";
+        notifications.notifyUser(isClient ? bid.getProfessionalId() : job.getClientId(),
+            "Nueva contraoferta",
+            who + " propuso una nueva tarifa para '" + job.getTitle() + "'.", job.getId());
+        return BidDto.from(saved);
     }
 
     @Transactional
@@ -143,7 +151,10 @@ public class BidService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo el cliente puede rechazar ofertas");
         }
         bid.setStatus("REJECTED");
-        return BidDto.from(bids.save(bid));
+        Bid saved = bids.save(bid);
+        notifications.notifyUser(bid.getProfessionalId(), "Oferta rechazada",
+            "Tu oferta para '" + job.getTitle() + "' fue rechazada.", job.getId());
+        return BidDto.from(saved);
     }
 
     @Transactional

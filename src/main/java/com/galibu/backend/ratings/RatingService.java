@@ -2,6 +2,7 @@ package com.galibu.backend.ratings;
 
 import com.galibu.backend.jobs.Job;
 import com.galibu.backend.jobs.JobRepository;
+import com.galibu.backend.notifications.NotificationService;
 import com.galibu.backend.ratings.dto.CreateRatingRequest;
 import com.galibu.backend.ratings.dto.RatingDto;
 import com.galibu.backend.users.User;
@@ -18,11 +19,14 @@ public class RatingService {
     private final RatingRepository ratings;
     private final JobRepository jobs;
     private final UserRepository users;
+    private final NotificationService notifications;
 
-    public RatingService(RatingRepository ratings, JobRepository jobs, UserRepository users) {
+    public RatingService(RatingRepository ratings, JobRepository jobs, UserRepository users,
+            NotificationService notifications) {
         this.ratings = ratings;
         this.jobs = jobs;
         this.users = users;
+        this.notifications = notifications;
     }
 
     @Transactional
@@ -78,6 +82,8 @@ public class RatingService {
         rated.setRating((float) avg);
         users.save(rated);
 
+        notifications.notifyUser(ratedId, "Nueva calificación",
+            "Te calificaron con " + req.getStars() + " estrella(s) por '" + job.getTitle() + "'.", jobId);
         return RatingDto.from(saved);
     }
 
