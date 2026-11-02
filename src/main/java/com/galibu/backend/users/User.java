@@ -47,6 +47,10 @@ public class User {
     @Column(nullable = false)
     private double balance = 0.0;
 
+    /** Trabajos que el profesional puede aceptar sin pagar la tarifa (cortesía). */
+    @Column(name = "free_acceptances_remaining", nullable = false)
+    private int freeAcceptancesRemaining = 0;
+
     @Column(name = "document_type", length = 60)
     private String documentType;
 

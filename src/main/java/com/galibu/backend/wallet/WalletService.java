@@ -16,8 +16,11 @@ public class WalletService {
     /** Tarifa que paga el profesional cada vez que acepta un trabajo. */
     public static final double ACCEPT_FEE = 3000.0;
 
-    /** Saldo inicial de cuentas nuevas (y backfill de existentes en V9). */
-    public static final double INITIAL_BALANCE = 150000.0;
+    /** Saldo inicial de cuentas nuevas. */
+    public static final double INITIAL_BALANCE = 0.0;
+
+    /** Trabajos gratuitos de cortesía para profesionales nuevos. */
+    public static final int FREE_ACCEPTANCES = 3;
 
     private final WalletTransactionRepository transactions;
     private final UserRepository users;
@@ -64,13 +67,21 @@ public class WalletService {
     @Transactional
     public WalletTransactionDto chargeAcceptFee(String professionalId, String jobId, String jobTitle) {
         User pro = findUserOr404(professionalId);
+        String title = jobTitle == null || jobTitle.isBlank() ? "servicio" : jobTitle;
+        // Cortesía: hasta FREE_ACCEPTANCES trabajos sin pagar la tarifa.
+        if (pro.getFreeAcceptancesRemaining() > 0) {
+            pro.setFreeAcceptancesRemaining(pro.getFreeAcceptancesRemaining() - 1);
+            users.save(pro);
+            return WalletTransactionDto.from(record(
+                professionalId, "FREE_ACCEPT", 0.0, pro.getBalance(), jobId,
+                "Aceptación gratuita (cortesía): " + title));
+        }
         if (pro.getBalance() < ACCEPT_FEE) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Saldo insuficiente para aceptar. Recarga tu wallet.");
         }
         pro.setBalance(pro.getBalance() - ACCEPT_FEE);
         users.save(pro);
-        String title = jobTitle == null || jobTitle.isBlank() ? "servicio" : jobTitle;
         return WalletTransactionDto.from(record(
             professionalId, "ACCEPT_FEE", -ACCEPT_FEE, pro.getBalance(), jobId,
             "Aceptación: " + title));

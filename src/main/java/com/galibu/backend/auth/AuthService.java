@@ -71,6 +71,8 @@ public class AuthService {
         user.setVerified(true);
         user.setVerificationStatus("VERIFIED");
         user.setBalance(WalletService.INITIAL_BALANCE);
+        user.setFreeAcceptancesRemaining(
+            "PROFESSIONAL".equals(role) || "BOTH".equals(role) ? WalletService.FREE_ACCEPTANCES : 0);
         users.save(user);
         return tokensFor(user);
     }
@@ -110,6 +112,8 @@ public class AuthService {
             user.setVerified(true);
             user.setVerificationStatus("VERIFIED");
             user.setBalance(WalletService.INITIAL_BALANCE);
+            user.setFreeAcceptancesRemaining(
+                "PROFESSIONAL".equals(role) || "BOTH".equals(role) ? WalletService.FREE_ACCEPTANCES : 0);
             users.save(user);
         } else if (!"GOOGLE".equals(user.getAuthProvider())) {
             user.setAuthProvider("GOOGLE");

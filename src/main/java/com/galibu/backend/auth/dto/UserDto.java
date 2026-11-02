@@ -22,6 +22,7 @@ public class UserDto {
     private float rating;
     private int completedJobs;
     private double balance;
+    private int freeAcceptancesRemaining;
     private String workCategory;
     private String verificationStatus;
     private String profilePhotoUrl;
@@ -44,6 +45,7 @@ public class UserDto {
         dto.setRating(user.getRating());
         dto.setCompletedJobs(user.getCompletedJobs());
         dto.setBalance(user.getBalance());
+        dto.setFreeAcceptancesRemaining(user.getFreeAcceptancesRemaining());
         dto.setWorkCategory(user.getWorkCategory());
         dto.setVerificationStatus(user.getVerificationStatus());
         dto.setProfilePhotoUrl(user.getProfilePhotoUrl());
