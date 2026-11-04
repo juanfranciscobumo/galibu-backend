@@ -30,7 +30,10 @@ public class RegisterRequest {
     @Size(min = 8, max = 72)
     private String password;
 
-    @NotBlank
+    /**
+     * Intención de registro: CLIENT, PROFESSIONAL o BOTH. Es opcional; si no
+     * llega, la cuenta nace como CLIENT (default seguro, nunca BOTH).
+     */
     private String role;
 
     @Size(max = 80)

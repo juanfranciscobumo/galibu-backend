@@ -7,6 +7,7 @@ import com.galibu.backend.jobs.JobRepository;
 import com.galibu.backend.ratings.RatingRepository;
 import com.galibu.backend.users.dto.PublicUserDto;
 import com.galibu.backend.users.dto.UpdateProfileRequest;
+import com.galibu.backend.wallet.WalletService;
 import com.galibu.backend.wallet.WalletTransactionRepository;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -111,7 +112,15 @@ public class UserService {
         }
         User user = findOr404(uid);
         if (!upper.equals(user.getRole())) {
+            // Un cliente que activa su capacidad profesional recibe las mismas
+            // 3 cortesías que un profesional nuevo. Solo se otorgan al pasar
+            // de CLIENT a BOTH: un profesional que ya las usó no las recupera
+            // y una llamada repetida sigue siendo idempotente.
+            boolean wasClientOnly = "CLIENT".equals(user.getRole());
             user.setRole("BOTH");
+            if (wasClientOnly) {
+                user.setFreeAcceptancesRemaining(WalletService.FREE_ACCEPTANCES);
+            }
             user = users.save(user);
         }
         return UserDto.from(user);

@@ -113,6 +113,39 @@ class UserServiceTest {
     }
 
     @Test
+    void addRoleFromClientGrantsFreeAcceptancesOnlyOnce() {
+        User u = user("u1"); // CLIENT sin cortesías
+        when(users.findById("u1")).thenReturn(Optional.of(u));
+        when(users.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserDto upgraded = service.addRole("u1", "PROFESSIONAL");
+
+        assertEquals("BOTH", upgraded.getRole());
+        assertEquals(com.galibu.backend.wallet.WalletService.FREE_ACCEPTANCES,
+            upgraded.getFreeAcceptancesRemaining());
+
+        // Si ya las consumió, una nueva llamada no las repone.
+        u.setFreeAcceptancesRemaining(0);
+        UserDto again = service.addRole("u1", "CLIENT");
+        assertEquals("BOTH", again.getRole());
+        assertEquals(0, again.getFreeAcceptancesRemaining());
+    }
+
+    @Test
+    void addRoleFromProfessionalDoesNotResetFreeAcceptances() {
+        User u = user("p1");
+        u.setRole("PROFESSIONAL");
+        u.setFreeAcceptancesRemaining(0); // ya usó sus 3 cortesías
+        when(users.findById("p1")).thenReturn(Optional.of(u));
+        when(users.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserDto upgraded = service.addRole("p1", "CLIENT");
+
+        assertEquals("BOTH", upgraded.getRole());
+        assertEquals(0, upgraded.getFreeAcceptancesRemaining());
+    }
+
+    @Test
     void changePasswordVerifiesCurrentAndLength() {
         User u = user("u1");
         u.setPasswordHash("hashed");

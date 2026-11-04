@@ -99,7 +99,10 @@ public class AuthService {
         email = email.trim().toLowerCase();
         User user = users.findByEmail(email).orElse(null);
         if (user == null) {
-            String role = (req.getRole() == null || req.getRole().isBlank()) ? "PROFESSIONAL" : normalizeRole(req.getRole());
+            // Cuenta nueva de Google: CLIENT por defecto. La capacidad
+            // profesional se activa después desde el onboarding/Perfil con
+            // POST /users/me/roles, nunca por omisión.
+            String role = normalizeRole(req.getRole());
             user = new User();
             user.setId(UUID.randomUUID().toString());
             user.setName(firstNonBlank(
@@ -145,7 +148,7 @@ public class AuthService {
         );
     }
 
-    private GoogleIdToken.Payload verifyGoogleToken(String idToken) {
+    GoogleIdToken.Payload verifyGoogleToken(String idToken) {
         try {
             GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
                 new NetHttpTransport(), GsonFactory.getDefaultInstance())
@@ -163,8 +166,16 @@ public class AuthService {
         }
     }
 
+    /**
+     * Normaliza la intención de registro. Un rol vacío es válido y significa
+     * CLIENT: es el default seguro para que una cuenta nueva nunca nazca como
+     * profesional (ni reciba cortesías) sin haberlo elegido.
+     */
     private String normalizeRole(String role) {
         String upper = role == null ? "" : role.trim().toUpperCase();
+        if (upper.isEmpty()) {
+            return "CLIENT";
+        }
         if (!VALID_ROLES.contains(upper)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rol inválido (CLIENT, PROFESSIONAL o BOTH)");
         }
