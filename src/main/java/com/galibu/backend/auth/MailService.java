@@ -1,5 +1,7 @@
 package com.galibu.backend.auth;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
@@ -17,6 +19,8 @@ import java.util.Properties;
  */
 @Service
 public class MailService {
+
+    private static final Logger log = LoggerFactory.getLogger(MailService.class);
 
     private final String host;
     private final int port;
@@ -74,7 +78,10 @@ public class MailService {
         );
         try {
             sender.send(message);
+            log.info("SMTP mail sent to={} host={} port={} from={}", to, host, port, from);
         } catch (RuntimeException ex) {
+            log.error("SMTP mail failed to={} host={} port={} from={} username={} error={}",
+                to, host, port, from, username, ex.getMessage(), ex);
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                 "No se pudo enviar el correo de recuperación. Inténtalo de nuevo más tarde.", ex);
         }
