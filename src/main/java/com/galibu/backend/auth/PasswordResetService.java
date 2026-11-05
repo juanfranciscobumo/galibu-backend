@@ -17,8 +17,8 @@ import org.springframework.web.server.ResponseStatusException;
  * - El código de 6 dígitos solo existe mientras dura el envío.
  * - Se almacena hasheado (BCrypt) igual que una contraseña.
  * - Expira a los 15 minutos.
- * - Si la cuenta no existe o es de Google, la respuesta es idéntica a un envío
- *   exitoso: no se revela qué correos están registrados.
+ * - Si el correo no existe o es de Google, devuelve un error claro al usuario
+ *   para que no quede esperando un correo que nunca llegará.
  */
 @Service
 public class PasswordResetService {
@@ -44,18 +44,25 @@ public class PasswordResetService {
     }
 
     /**
-     * Solicita un código de recuperación. Siempre responde 204 (sin exponer
-     * si el email existe); solo envía correo si la cuenta existe y es LOCAL.
+     * Solicita un código de recuperación.
+     *
+     * - Si el correo no existe: error 400 "El correo no está registrado en Galibu".
+     * - Si es cuenta de Google: error 400 indicando que se gestiona desde Google.
+     * - Si SMTP no está configurado: error 503.
+     * - Si todo está bien: envía el código de 6 dígitos y responde 204.
      */
     public void requestReset(String rawEmail) {
         String email = rawEmail.trim().toLowerCase();
         Optional<User> maybe = users.findByEmail(email);
-        if (maybe.isEmpty()) return;
+        if (maybe.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "El correo no está registrado en Galibu");
+        }
 
         User user = maybe.get();
         if (!"LOCAL".equals(user.getAuthProvider())) {
-            // Cuenta de Google: no tiene contraseña en Galibu; la gestión es desde Google.
-            return;
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "Tu cuenta está vinculada a Google. Cambia tu contraseña desde tu cuenta de Google.");
         }
 
         // Fail-closed: si el correo no se puede enviar, abortamos antes de generar nada.
