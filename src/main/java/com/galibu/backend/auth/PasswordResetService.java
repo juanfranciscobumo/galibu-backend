@@ -12,7 +12,9 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
@@ -36,17 +38,20 @@ public class PasswordResetService {
     private final PasswordResetTokenRepository tokens;
     private final PasswordEncoder passwordEncoder;
     private final MailService mail;
+    private final TransactionTemplate txTemplate;
 
     public PasswordResetService(
         UserRepository users,
         PasswordResetTokenRepository tokens,
         PasswordEncoder passwordEncoder,
-        MailService mail
+        MailService mail,
+        PlatformTransactionManager txManager
     ) {
         this.users = users;
         this.tokens = tokens;
         this.passwordEncoder = passwordEncoder;
         this.mail = mail;
+        this.txTemplate = new TransactionTemplate(txManager);
     }
 
     /**
@@ -80,7 +85,10 @@ public class PasswordResetService {
         int attempts = 0;
         while (true) {
             try {
-                doRequestReset(email);
+                txTemplate.execute(status -> {
+                    doRequestReset(email);
+                    return null;
+                });
                 return;
             } catch (CannotAcquireLockException ex) {
                 attempts++;
