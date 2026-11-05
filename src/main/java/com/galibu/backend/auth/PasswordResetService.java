@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,7 @@ public class PasswordResetService {
     private static final Logger log = LoggerFactory.getLogger(PasswordResetService.class);
     private static final long TOKEN_EXPIRY_MS = 15 * 60 * 1000L;
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final int MAX_RETRIES = 3;
 
     private final UserRepository users;
     private final PasswordResetTokenRepository tokens;
@@ -54,7 +57,6 @@ public class PasswordResetService {
      * - Si SMTP no está configurado: error 503.
      * - Si todo está bien: envía el código de 6 dígitos y responde 204.
      */
-    @Transactional
     public void requestReset(String rawEmail) {
         String email = rawEmail.trim().toLowerCase();
         Optional<User> maybe = users.findByEmail(email);
@@ -74,6 +76,37 @@ public class PasswordResetService {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                 "El envío de correos no está configurado en este servidor.");
         }
+
+        int attempts = 0;
+        while (true) {
+            try {
+                doRequestReset(email);
+                return;
+            } catch (CannotAcquireLockException ex) {
+                attempts++;
+                if (attempts >= MAX_RETRIES) {
+                    log.error("Deadlock persistente al activar reset para email={} tras {} intentos",
+                        email, attempts);
+                    throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                        "No se pudo procesar la solicitud. Inténtalo de nuevo más tarde.");
+                }
+                log.warn("Deadlock al activar reset para email={}, reintento {}/{}",
+                    email, attempts, MAX_RETRIES);
+                try {
+                    Thread.sleep(50 * attempts); // backoff exponencial ligero
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                        "No se pudo procesar la solicitud. Inténtalo de nuevo más tarde.");
+                }
+            }
+        }
+    }
+
+    private void doRequestReset(String email) {
+        User user = users.findByEmail(email)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "El correo no está registrado en Galibu"));
 
         long now = System.currentTimeMillis();
         tokens.invalidateActiveForUser(user.getId());
