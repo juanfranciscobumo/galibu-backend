@@ -54,52 +54,44 @@ public class PasswordResetService {
      * - Si SMTP no está configurado: error 503.
      * - Si todo está bien: envía el código de 6 dígitos y responde 204.
      */
+    @Transactional
     public void requestReset(String rawEmail) {
+        String email = rawEmail.trim().toLowerCase();
+        Optional<User> maybe = users.findByEmail(email);
+        if (maybe.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "El correo no está registrado en Galibu");
+        }
+
+        User user = maybe.get();
+        if (!"LOCAL".equals(user.getAuthProvider())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "Tu cuenta está vinculada a Google. Cambia tu contraseña desde tu cuenta de Google.");
+        }
+
+        // Fail-closed: si el correo no se puede enviar, abortamos antes de generar nada.
+        if (!mail.isConfigured()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "El envío de correos no está configurado en este servidor.");
+        }
+
+        long now = System.currentTimeMillis();
+        tokens.invalidateActiveForUser(user.getId());
+
+        String code = String.format("%06d", RANDOM.nextInt(1_000_000));
+        PasswordResetToken token = new PasswordResetToken();
+        token.setId(java.util.UUID.randomUUID().toString());
+        token.setUserId(user.getId());
+        token.setTokenHash(passwordEncoder.encode(code));
+        token.setExpiresAt(now + TOKEN_EXPIRY_MS);
+        token.setUsed(false);
+        token.setCreatedAt(now);
+        tokens.save(token);
         try {
-            String email = rawEmail.trim().toLowerCase();
-            Optional<User> maybe = users.findByEmail(email);
-            if (maybe.isEmpty()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "El correo no está registrado en Galibu");
-            }
-
-            User user = maybe.get();
-            if (!"LOCAL".equals(user.getAuthProvider())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Tu cuenta está vinculada a Google. Cambia tu contraseña desde tu cuenta de Google.");
-            }
-
-            // Fail-closed: si el correo no se puede enviar, abortamos antes de generar nada.
-            if (!mail.isConfigured()) {
-                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "El envío de correos no está configurado en este servidor.");
-            }
-
-            long now = System.currentTimeMillis();
+            mail.sendPasswordResetCode(email, code);
+        } catch (RuntimeException ex) {
             tokens.invalidateActiveForUser(user.getId());
-
-            String code = String.format("%06d", RANDOM.nextInt(1_000_000));
-            PasswordResetToken token = new PasswordResetToken();
-            token.setId(java.util.UUID.randomUUID().toString());
-            token.setUserId(user.getId());
-            token.setTokenHash(passwordEncoder.encode(code));
-            token.setExpiresAt(now + TOKEN_EXPIRY_MS);
-            token.setUsed(false);
-            token.setCreatedAt(now);
-            tokens.save(token);
-            try {
-                mail.sendPasswordResetCode(email, code);
-            } catch (RuntimeException ex) {
-                tokens.invalidateActiveForUser(user.getId());
-                throw ex;
-            }
-        } catch (ResponseStatusException ex) {
             throw ex;
-        } catch (Exception ex) {
-            log.error("Error inesperado en solicitud de recuperación para {}: {}",
-                rawEmail, ex.getMessage(), ex);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                "No se pudo procesar la solicitud. Inténtalo de nuevo más tarde.");
         }
     }
 
@@ -107,6 +99,7 @@ public class PasswordResetService {
      * Restablece la contraseña previa validación del código de 6 dígitos
      * y de la expiración del token.
      */
+    @Transactional
     public void resetPassword(String rawEmail, String code, String newPassword) {
         String email = rawEmail.trim().toLowerCase();
         Optional<User> maybe = users.findByEmail(email);
