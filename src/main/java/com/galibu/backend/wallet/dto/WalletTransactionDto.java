@@ -12,13 +12,13 @@ import lombok.Setter;
 @AllArgsConstructor
 public class WalletTransactionDto {
 
-    private String id;
-    private String type;
-    private double amount;
-    private double balanceAfter;
-    private String jobId;
-    private String description;
-    private long createdAt;
+    public String id;
+    public String type;
+    public double amount;
+    public double balanceAfter;
+    public String jobId;
+    public String description;
+    public long createdAt;
 
     public static WalletTransactionDto from(WalletTransaction tx) {
         WalletTransactionDto dto = new WalletTransactionDto();
@@ -32,3 +32,4 @@ public class WalletTransactionDto {
         return dto;
     }
 }
+

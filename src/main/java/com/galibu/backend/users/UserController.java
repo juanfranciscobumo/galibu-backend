@@ -7,6 +7,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,6 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/users")
 public class UserController {
 
+    private static final Logger log = LoggerFactory.getLogger(UserController.class);
+
     private final UserService service;
 
     public UserController(UserService service) {
@@ -31,38 +35,45 @@ public class UserController {
 
     @GetMapping("/me")
     public UserDto me(Authentication auth) {
+        log.debug("users me userId={}", auth.getName());
         return service.me(auth.getName());
     }
 
     @PatchMapping("/me")
     public UserDto updateProfile(Authentication auth, @Valid @RequestBody UpdateProfileRequest request) {
+        log.info("users updateProfile userId={}", auth.getName());
         return service.updateProfile(auth.getName(), request);
     }
 
     @PostMapping("/me/roles")
     public UserDto addRole(Authentication auth, @Valid @RequestBody RoleRequest request) {
+        log.info("users addRole userId={} role={}", auth.getName(), request.role());
         return service.addRole(auth.getName(), request.role());
     }
 
     @PatchMapping("/me/password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void changePassword(Authentication auth, @Valid @RequestBody PasswordChangeRequest request) {
+        log.info("users changePassword userId={}", auth.getName());
         service.changePassword(auth.getName(), request.currentPassword(), request.newPassword());
     }
 
     @DeleteMapping("/me")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteAccount(Authentication auth) {
+        log.info("users deleteAccount userId={}", auth.getName());
         service.deleteAccount(auth.getName());
     }
 
     @GetMapping("/professionals")
     public List<PublicUserDto> professionals(Authentication auth) {
+        log.debug("users professionals userId={}", auth.getName());
         return service.professionals(auth.getName());
     }
 
     @GetMapping("/{id}")
     public PublicUserDto getById(@PathVariable String id) {
+        log.debug("users getById id={}", id);
         return service.getById(id);
     }
 

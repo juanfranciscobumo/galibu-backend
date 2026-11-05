@@ -17,6 +17,8 @@ import io.jsonwebtoken.Claims;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -27,6 +29,8 @@ import com.galibu.backend.wallet.WalletService;
 
 @Service
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private static final List<String> VALID_ROLES = List.of("CLIENT", "PROFESSIONAL", "BOTH");
 
@@ -54,9 +58,11 @@ public class AuthService {
     public AuthResponse register(RegisterRequest req) {
         String email = req.getEmail().trim().toLowerCase();
         if (users.existsByEmail(email)) {
+            log.warn("register rejected email={} role={} reason=already_registered", email, req.getRole());
             throw new ResponseStatusException(HttpStatus.CONFLICT, "El correo ya está registrado");
         }
         String role = normalizeRole(req.getRole());
+        log.info("register email={} role={}", email, role);
         User user = new User();
         user.setId(UUID.randomUUID().toString());
         user.setName(TextUtils.capitalizeFirst(req.getName().trim()));
@@ -74,35 +80,40 @@ public class AuthService {
         user.setFreeAcceptancesRemaining(
             "PROFESSIONAL".equals(role) || "BOTH".equals(role) ? WalletService.FREE_ACCEPTANCES : 0);
         users.save(user);
+        log.info("register success email={} role={} userId={}", email, role, user.getId());
         return tokensFor(user);
     }
 
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest req) {
         String email = req.getEmail().trim().toLowerCase();
+        log.info("login email={}", email);
         User user = users.findByEmail(email).orElseThrow(() ->
             new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Correo o contraseña incorrectos"));
         if (user.getPasswordHash() == null
             || !passwordEncoder.matches(req.getPassword(), user.getPasswordHash())) {
+            log.warn("login failed email={} reason=invalid_credentials", email);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Correo o contraseña incorrectos");
         }
+        log.info("login success email={} userId={}", email, user.getId());
         return tokensFor(user);
     }
 
     @Transactional
     public AuthResponse loginWithGoogle(GoogleLoginRequest req) {
-        GoogleIdToken.Payload payload = verifyGoogleToken(req.getIdToken());
+        GoogleIdToken.Payload payload = verifyGoogleToken(req.idToken);
         String email = payload.getEmail();
         if (email == null || !Boolean.TRUE.equals(payload.getEmailVerified())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Cuenta de Google sin correo verificado");
         }
         email = email.trim().toLowerCase();
+        log.info("loginWithGoogle email={} role={}", email, req.role);
         User user = users.findByEmail(email).orElse(null);
         if (user == null) {
             // Cuenta nueva de Google: CLIENT por defecto. La capacidad
             // profesional se activa después desde el onboarding/Perfil con
             // POST /users/me/roles, nunca por omisión.
-            String role = normalizeRole(req.getRole());
+            String role = normalizeRole(req.role);
             user = new User();
             user.setId(UUID.randomUUID().toString());
             user.setName(firstNonBlank(
@@ -118,9 +129,13 @@ public class AuthService {
             user.setFreeAcceptancesRemaining(
                 "PROFESSIONAL".equals(role) || "BOTH".equals(role) ? WalletService.FREE_ACCEPTANCES : 0);
             users.save(user);
+            log.info("loginWithGoogle new email={} role={} userId={}", email, role, user.getId());
         } else if (!"GOOGLE".equals(user.getAuthProvider())) {
             user.setAuthProvider("GOOGLE");
             users.save(user);
+            log.info("loginWithGoogle linked email={} previousRole={} newRole=BOTH userId={}", email, user.getRole(), user.getId());
+        } else {
+            log.info("loginWithGoogle existing email={} role={} userId={}", email, user.getRole(), user.getId());
         }
         return tokensFor(user);
     }

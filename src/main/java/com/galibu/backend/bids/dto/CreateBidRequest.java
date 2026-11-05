@@ -14,10 +14,11 @@ import lombok.Setter;
 public class CreateBidRequest {
 
     @DecimalMin(value = "1.0", message = "El monto debe ser mayor a 0")
-    private double amount;
+    public double amount;
 
     @Size(max = 2000)
-    private String comment;
+    public String comment;
 
-    private int durationHours = 1;
+    public int durationHours = 1;
 }
+

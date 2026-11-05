@@ -16,8 +16,9 @@ public class CreateRatingRequest {
 
     @Min(value = 1, message = "La calificación mínima es 1 estrella")
     @Max(value = 5, message = "La calificación máxima es 5 estrellas")
-    private int stars;
+    public int stars;
 
     @Size(max = 2000)
-    private String comment;
+    public String comment;
 }
+

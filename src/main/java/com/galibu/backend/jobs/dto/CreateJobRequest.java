@@ -16,48 +16,49 @@ import lombok.Setter;
 public class CreateJobRequest {
 
     @Size(max = 64, message = "ID inválido")
-    private String id;
+    public String id;
 
     @Size(max = 80)
-    private String category = "";
+    public String category = "";
 
     @NotBlank
     @Size(max = 200)
-    private String title;
+    public String title;
 
     @Size(max = 5000)
-    private String description;
+    public String description;
 
     @Min(0)
-    private double budgetMin = 0.0;
+    public double budgetMin = 0.0;
 
     @Size(max = 255)
-    private String address;
+    public String address;
 
     @Size(max = 80)
-    private String department;
+    public String department;
 
     @Size(max = 80)
-    private String municipality;
+    public String municipality;
 
-    private double latitude = 0.0;
+    public double latitude = 0.0;
 
-    private double longitude = 0.0;
+    public double longitude = 0.0;
 
     @Size(max = 64)
-    private String professionalId;
+    public String professionalId;
 
     @Size(max = 120)
-    private String professionalName;
+    public String professionalName;
 
     @Size(max = 20)
-    private String source;
+    public String source;
 
     @Size(max = 200000)
-    private String photos;
+    public String photos;
 
-    private Double proHourlyRate;
+    public Double proHourlyRate;
 
     @DecimalMin(value = "0.0", message = "El precio sugerido no puede ser negativo")
-    private Double suggestedPrice;
+    public Double suggestedPrice;
 }
+

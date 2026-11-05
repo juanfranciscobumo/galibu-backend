@@ -14,7 +14,8 @@ import lombok.Setter;
 public class CreateChatMessageRequest {
     @NotBlank
     @Size(max = 4000)
-    private String text;
+    public String text;
 
-    private String type; // text or image
+    public String type; // text or image
 }
+

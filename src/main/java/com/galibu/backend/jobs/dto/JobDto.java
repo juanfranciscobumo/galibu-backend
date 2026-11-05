@@ -12,36 +12,36 @@ import lombok.Setter;
 @AllArgsConstructor
 public class JobDto {
 
-    private String id;
-    private String category;
-    private String title;
-    private String description;
-    private double budgetMin;
-    private String address;
-    private double latitude;
-    private double longitude;
-    private String status;
-    private String clientId;
-    private String clientName;
-    private String professionalId;
-    private String professionalName;
-    private Double finalPrice;
-    private long createdAt;
-    private Float completionRating;
-    private String completionReview;
-    private Float clientRatingOfPro;
-    private String clientReviewOfPro;
-    private Float proRatingOfClient;
-    private String proReviewOfClient;
-    private String department;
-    private String municipality;
-    private Double proHourlyRate;
-    private Double suggestedPrice;
-    private Double counterOfferAmount;
-    private String counterOfferSender;
-    private String source;
-    private String photos;
-    private long updatedAt;
+    public String id;
+    public String category;
+    public String title;
+    public String description;
+    public double budgetMin;
+    public String address;
+    public double latitude;
+    public double longitude;
+    public String status;
+    public String clientId;
+    public String clientName;
+    public String professionalId;
+    public String professionalName;
+    public Double finalPrice;
+    public long createdAt;
+    public Float completionRating;
+    public String completionReview;
+    public Float clientRatingOfPro;
+    public String clientReviewOfPro;
+    public Float proRatingOfClient;
+    public String proReviewOfClient;
+    public String department;
+    public String municipality;
+    public Double proHourlyRate;
+    public Double suggestedPrice;
+    public Double counterOfferAmount;
+    public String counterOfferSender;
+    public String source;
+    public String photos;
+    public long updatedAt;
 
     public static JobDto from(Job job) {
         JobDto dto = new JobDto();
@@ -78,3 +78,4 @@ public class JobDto {
         return dto;
     }
 }
+

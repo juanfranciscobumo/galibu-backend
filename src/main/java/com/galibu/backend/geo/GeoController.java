@@ -2,6 +2,8 @@ package com.galibu.backend.geo;
 
 import jakarta.validation.Valid;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,6 +17,8 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api/geo")
 public class GeoController {
+
+    private static final Logger log = LoggerFactory.getLogger(GeoController.class);
 
     private final DepartmentRepository departments;
     private final MunicipalityRepository municipalities;
@@ -41,6 +45,7 @@ public class GeoController {
 
     @GetMapping("/departments")
     public List<NamedDto> departments() {
+        log.debug("geo departments");
         return departments.findAllByOrderByNameAsc().stream()
             .map(d -> new NamedDto(d.getId(), d.getName()))
             .toList();
@@ -48,6 +53,7 @@ public class GeoController {
 
     @GetMapping("/departments/{departmentId}/municipalities")
     public List<NamedDto> municipalities(@PathVariable Long departmentId) {
+        log.debug("geo municipalities departmentId={}", departmentId);
         if (!departments.existsById(departmentId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Departamento no existe");
         }
@@ -58,6 +64,7 @@ public class GeoController {
 
     @GetMapping("/tree")
     public List<DepartmentTreeDto> tree() {
+        log.debug("geo tree");
         List<Department> all = departments.findAllByOrderByNameAsc();
         return all.stream()
             .map(d -> new DepartmentTreeDto(
@@ -70,6 +77,7 @@ public class GeoController {
 
     @GetMapping("/categories")
     public List<NamedDto> categories() {
+        log.debug("geo categories");
         return categories.findAllByOrderByNameAsc().stream()
             .map(c -> new NamedDto(c.getId(), c.getName()))
             .toList();
@@ -86,6 +94,7 @@ public class GeoController {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La categoría ya existe");
         }
         Category saved = categories.save(new Category(null, name));
+        log.info("geo addCategory name={} id={}", name, saved.getId());
         return new NamedDto(saved.getId(), saved.getName());
     }
 }

@@ -12,14 +12,14 @@ import lombok.Setter;
 @AllArgsConstructor
 public class ChatMessageDto {
 
-    private String id;
-    private String jobId;
-    private String senderId;
-    private String senderName;
-    private String text;
-    private long timestamp;
-    private String type;
-    private boolean read;
+    public String id;
+    public String jobId;
+    public String senderId;
+    public String senderName;
+    public String text;
+    public long timestamp;
+    public String type;
+    public boolean read;
 
     public static ChatMessageDto from(ChatMessage m) {
         ChatMessageDto dto = new ChatMessageDto();
@@ -34,3 +34,4 @@ public class ChatMessageDto {
         return dto;
     }
 }
+

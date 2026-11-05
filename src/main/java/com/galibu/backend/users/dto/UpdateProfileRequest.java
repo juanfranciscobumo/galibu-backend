@@ -13,29 +13,30 @@ import lombok.Setter;
 public class UpdateProfileRequest {
 
     @Size(max = 120)
-    private String name;
+    public String name;
 
     @Size(max = 40)
-    private String phone;
+    public String phone;
 
-    private String profilePhotoUrl;
-
-    @Size(max = 80)
-    private String department;
+    public String profilePhotoUrl;
 
     @Size(max = 80)
-    private String municipality;
+    public String department;
+
+    @Size(max = 80)
+    public String municipality;
 
     @Size(max = 255)
-    private String address;
+    public String address;
 
     @Size(max = 80)
-    private String workCategory;
+    public String workCategory;
 
-    private Double hourlyRate;
+    public Double hourlyRate;
 
-    private String workPhotos;
+    public String workPhotos;
 
     @Size(max = 600)
-    private String workDescription;
+    public String workDescription;
 }
+

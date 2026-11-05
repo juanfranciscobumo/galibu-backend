@@ -16,20 +16,20 @@ import lombok.Setter;
 @AllArgsConstructor
 public class PublicUserDto {
 
-    private String id;
-    private String name;
-    private String role;
-    private boolean verified;
-    private float rating;
-    private int completedJobs;
-    private String workCategory;
-    private String verificationStatus;
-    private String profilePhotoUrl;
-    private String department;
-    private String municipality;
-    private Double hourlyRate;
-    private String workPhotos;
-    private String workDescription;
+    public String id;
+    public String name;
+    public String role;
+    public boolean verified;
+    public float rating;
+    public int completedJobs;
+    public String workCategory;
+    public String verificationStatus;
+    public String profilePhotoUrl;
+    public String department;
+    public String municipality;
+    public Double hourlyRate;
+    public String workPhotos;
+    public String workDescription;
 
     public static PublicUserDto from(User user) {
         PublicUserDto dto = new PublicUserDto();
@@ -50,3 +50,4 @@ public class PublicUserDto {
         return dto;
     }
 }
+

@@ -12,26 +12,26 @@ import lombok.Setter;
 @AllArgsConstructor
 public class UserDto {
 
-    private String id;
-    private String name;
-    private String email;
-    private String phone;
-    private String role;
-    private String authProvider;
-    private boolean verified;
-    private float rating;
-    private int completedJobs;
-    private double balance;
-    private int freeAcceptancesRemaining;
-    private String workCategory;
-    private String verificationStatus;
-    private String profilePhotoUrl;
-    private String department;
-    private String municipality;
-    private String address;
-    private Double hourlyRate;
-    private String workPhotos;
-    private String workDescription;
+    public String id;
+    public String name;
+    public String email;
+    public String phone;
+    public String role;
+    public String authProvider;
+    public boolean verified;
+    public float rating;
+    public int completedJobs;
+    public double balance;
+    public int freeAcceptancesRemaining;
+    public String workCategory;
+    public String verificationStatus;
+    public String profilePhotoUrl;
+    public String department;
+    public String municipality;
+    public String address;
+    public Double hourlyRate;
+    public String workPhotos;
+    public String workDescription;
 
     public static UserDto from(User user) {
         UserDto dto = new UserDto();
@@ -58,3 +58,4 @@ public class UserDto {
         return dto;
     }
 }
+

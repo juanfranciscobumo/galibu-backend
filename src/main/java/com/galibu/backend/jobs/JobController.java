@@ -8,6 +8,8 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -25,6 +27,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/jobs")
 public class JobController {
 
+    private static final Logger log = LoggerFactory.getLogger(JobController.class);
+
     private final JobService service;
 
     public JobController(JobService service) {
@@ -33,6 +37,7 @@ public class JobController {
 
     @GetMapping("/open")
     public List<JobDto> open() {
+        log.debug("jobs open");
         return service.list(null, null, null, "OPEN");
     }
 
@@ -43,18 +48,28 @@ public class JobController {
         @RequestParam(required = false) String professionalId,
         @RequestParam(required = false) String status
     ) {
+        log.debug("jobs list userId={}", auth.getName());
         return service.list(auth.getName(), clientId, professionalId, status);
     }
 
     @GetMapping("/{id}")
     public JobDto get(Authentication auth, @PathVariable String id) {
+        log.debug("jobs get userId={} jobId={}", auth.getName(), id);
         return service.get(auth.getName(), id);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public JobDto create(Authentication auth, @Valid @RequestBody CreateJobRequest request) {
-        return service.create(auth.getName(), request);
+        log.info("jobs create userId={}", auth.getName());
+        try {
+            JobDto response = service.create(auth.getName(), request);
+            log.info("jobs create success userId={} jobId={}", auth.getName(), response.id);
+            return response;
+        } catch (Exception ex) {
+            log.warn("jobs create failed userId={} error={}", auth.getName(), ex.getMessage());
+            throw ex;
+        }
     }
 
     @PatchMapping("/{id}/cancel")
@@ -62,12 +77,14 @@ public class JobController {
         Authentication auth, @PathVariable String id,
         @RequestParam(required = false) String reason
     ) {
+        log.info("jobs cancel userId={} jobId={}", auth.getName(), id);
         return service.cancel(auth.getName(), id, reason);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(Authentication auth, @PathVariable String id) {
+        log.info("jobs delete userId={} jobId={}", auth.getName(), id);
         service.delete(auth.getName(), id);
     }
 
@@ -75,21 +92,25 @@ public class JobController {
     public JobDto counter(
         Authentication auth, @PathVariable String id, @Valid @RequestBody CounterRequest request
     ) {
+        log.info("jobs counter userId={} jobId={}", auth.getName(), id);
         return service.counter(auth.getName(), id, request);
     }
 
     @PostMapping("/{id}/accept-direct")
     public JobDto acceptDirect(Authentication auth, @PathVariable String id) {
+        log.info("jobs acceptDirect userId={} jobId={}", auth.getName(), id);
         return service.acceptDirect(auth.getName(), id);
     }
 
     @PostMapping("/{id}/reject-direct")
     public JobDto rejectDirect(Authentication auth, @PathVariable String id) {
+        log.info("jobs rejectDirect userId={} jobId={}", auth.getName(), id);
         return service.rejectDirect(auth.getName(), id);
     }
 
     @PostMapping("/{id}/start")
     public JobDto startService(Authentication auth, @PathVariable String id) {
+        log.info("jobs startService userId={} jobId={}", auth.getName(), id);
         return service.startService(auth.getName(), id);
     }
 
@@ -97,6 +118,7 @@ public class JobController {
     public JobDto finishService(
         Authentication auth, @PathVariable String id, @Valid @RequestBody FinishServiceRequest request
     ) {
+        log.info("jobs finishService userId={} jobId={} stars={}", auth.getName(), id, request.stars());
         return service.finishService(auth.getName(), id, request.stars(), request.comment());
     }
 

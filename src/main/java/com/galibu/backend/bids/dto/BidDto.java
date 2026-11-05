@@ -12,19 +12,19 @@ import lombok.Setter;
 @AllArgsConstructor
 public class BidDto {
 
-    private String id;
-    private String jobId;
-    private String professionalId;
-    private String professionalName;
-    private float professionalRating;
-    private String professionalPhoto;
-    private double amount;
-    private String comment;
-    private int durationHours;
-    private String status;
-    private Double lastCounterOfferAmount;
-    private Double suggestedPrice;
-    private long createdAt;
+    public String id;
+    public String jobId;
+    public String professionalId;
+    public String professionalName;
+    public float professionalRating;
+    public String professionalPhoto;
+    public double amount;
+    public String comment;
+    public int durationHours;
+    public String status;
+    public Double lastCounterOfferAmount;
+    public Double suggestedPrice;
+    public long createdAt;
 
     public static BidDto from(Bid bid) {
         BidDto dto = new BidDto();
@@ -44,3 +44,4 @@ public class BidDto {
         return dto;
     }
 }
+

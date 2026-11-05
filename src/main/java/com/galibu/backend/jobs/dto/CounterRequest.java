@@ -13,5 +13,6 @@ import lombok.Setter;
 public class CounterRequest {
 
     @DecimalMin(value = "1.0", message = "El monto debe ser mayor a 0")
-    private double amount;
+    public double amount;
 }
+
