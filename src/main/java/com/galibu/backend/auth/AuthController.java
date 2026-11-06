@@ -36,39 +36,39 @@ public class AuthController {
     public AuthResponse register(@Valid @RequestBody RegisterRequest request) {
         log.info("auth register");
         try {
-            authService.register(request);
+            AuthResponse response = authService.register(request);
             log.info("auth register success");
+            return response;
         } catch (Exception ex) {
             log.warn("auth register failed error={}", ex.getMessage());
             throw ex;
         }
-        return null;
     }
 
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         log.info("auth login");
         try {
-            authService.login(request);
+            AuthResponse response = authService.login(request);
             log.info("auth login success");
+            return response;
         } catch (Exception ex) {
             log.warn("auth login failed error={}", ex.getMessage());
             throw ex;
         }
-        return null;
     }
 
     @PostMapping("/google")
     public AuthResponse loginWithGoogle(@Valid @RequestBody GoogleLoginRequest request) {
         log.info("auth loginWithGoogle");
         try {
-            authService.loginWithGoogle(request);
+            AuthResponse response = authService.loginWithGoogle(request);
             log.info("auth loginWithGoogle success");
+            return response;
         } catch (Exception ex) {
             log.warn("auth loginWithGoogle failed error={}", ex.getMessage());
             throw ex;
         }
-        return null;
     }
 
     @PostMapping("/refresh")
