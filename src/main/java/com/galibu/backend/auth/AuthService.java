@@ -107,9 +107,17 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Cuenta de Google sin correo verificado");
         }
         email = email.trim().toLowerCase();
-        log.info("loginWithGoogle email={} role={}", email, req.role);
+        boolean allowCreate = "REGISTER".equalsIgnoreCase(req.mode);
+        log.info("loginWithGoogle email={} requestedRole={} mode={}", email, req.role, req.mode);
         User user = users.findByEmail(email).orElse(null);
         if (user == null) {
+            if (!allowCreate) {
+                // El login con Google no crea cuentas: si el correo no existe,
+                // el usuario debe registrarse primero.
+                log.warn("loginWithGoogle rejected email={} reason=account_not_found", email);
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "No existe una cuenta con este correo. Regístrate primero.");
+            }
             // Una cuenta nueva creada desde Google nace SIEMPRE como CLIENT.
             // El rol que envía la app no se usa aquí: la capacidad profesional
             // solo se activa de forma explícita desde el onboarding/Perfil con
@@ -131,6 +139,11 @@ public class AuthService {
                 "PROFESSIONAL".equals(role) || "BOTH".equals(role) ? WalletService.FREE_ACCEPTANCES : 0);
             users.save(user);
             log.info("loginWithGoogle new email={} role={} userId={}", email, role, user.getId());
+        } else if (allowCreate) {
+            // El registro no debe "adoptar" una cuenta existente en silencio.
+            log.warn("loginWithGoogle rejected email={} reason=already_registered", email);
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "El correo ya está registrado. Inicia sesión.");
         } else if (!"GOOGLE".equals(user.getAuthProvider())) {
             user.setAuthProvider("GOOGLE");
             users.save(user);
