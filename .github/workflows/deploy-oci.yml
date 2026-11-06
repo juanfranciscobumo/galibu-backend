@@ -35,6 +35,17 @@ jobs:
             git pull origin main
             # Podman en Oracle Linux 9 (con prefijo sudo)
             sudo podman build -t galibu-backend:latest .
-            sudo podman run -d --name galibu-backend --restart=unless-stopped -p 8080:8080 --env-file .env galibu-backend:latest || sudo podman restart galibu-backend
+            # Recrear el contenedor para que use la imagen recién construida.
+            sudo podman rm -f galibu-backend || true
+            sudo podman run -d --name galibu-backend --restart=unless-stopped -p 8080:8080 --env-file .env galibu-backend:latest
             sudo podman ps
-            curl -f http://localhost:8080/actuator/health || echo "health check pendiente (spring tarda ~60s)"
+            # Spring tarda en arrancar: reintentar el health check.
+            for i in $(seq 1 30); do
+              if curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1; then
+                echo "backend UP"
+                exit 0
+              fi
+              sleep 5
+            done
+            echo "health check pendiente: revisar 'sudo podman logs galibu-backend'"
+            exit 1
