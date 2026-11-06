@@ -1,0 +1,40 @@
+name: Deploy a Oracle Cloud (OCI)
+
+# Despliegue automático del backend (solo backend, DB externa) en la VM OCI.
+# Requiere Secrets en GitHub:
+#   OCI_HOST=129.38.111.104
+#   OCI_USER=opc
+#   OCI_SSH_KEY=<clave privada completa, con cabeceras BEGIN/END>
+#   OCI_PORT=22
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - ".github/workflows/deploy-oci.yml"
+      - "src/**"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy por SSH a OCI
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          port: ${{ secrets.OCI_PORT }}
+          script: |
+            set -e
+            cd ~/galibu-backend
+            git pull origin main
+            # Podman en Oracle Linux 9 (con prefijo sudo)
+            sudo podman build -t galibu-backend:latest .
+            sudo podman run -d --name galibu-backend --restart=unless-stopped -p 8080:8080 --env-file .env galibu-backend:latest || sudo podman restart galibu-backend
+            sudo podman ps
+            curl -f http://localhost:8080/actuator/health || echo "health check pendiente (spring tarda ~60s)"
