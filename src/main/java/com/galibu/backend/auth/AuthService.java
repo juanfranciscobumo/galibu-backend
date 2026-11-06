@@ -110,10 +110,11 @@ public class AuthService {
         log.info("loginWithGoogle email={} role={}", email, req.role);
         User user = users.findByEmail(email).orElse(null);
         if (user == null) {
-            // Cuenta nueva de Google: CLIENT por defecto. La capacidad
-            // profesional se activa después desde el onboarding/Perfil con
-            // POST /users/me/roles, nunca por omisión.
-            String role = normalizeRole(req.role);
+            // Una cuenta nueva creada desde Google nace SIEMPRE como CLIENT.
+            // El rol que envía la app no se usa aquí: la capacidad profesional
+            // solo se activa de forma explícita desde el onboarding/Perfil con
+            // POST /users/me/roles.
+            String role = "CLIENT";
             user = new User();
             user.setId(UUID.randomUUID().toString());
             user.setName(firstNonBlank(
@@ -133,7 +134,7 @@ public class AuthService {
         } else if (!"GOOGLE".equals(user.getAuthProvider())) {
             user.setAuthProvider("GOOGLE");
             users.save(user);
-            log.info("loginWithGoogle linked email={} previousRole={} newRole=BOTH userId={}", email, user.getRole(), user.getId());
+            log.info("loginWithGoogle linked email={} role={} userId={}", email, user.getRole(), user.getId());
         } else {
             log.info("loginWithGoogle existing email={} role={} userId={}", email, user.getRole(), user.getId());
         }
