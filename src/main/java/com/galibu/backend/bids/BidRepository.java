@@ -20,4 +20,8 @@ public interface BidRepository extends JpaRepository<Bid, String> {
     java.util.Optional<Bid> findByJobIdAndProfessionalId(String jobId, String professionalId);
 
     List<Bid> findAllByJobIdAndProfessionalId(String jobId, String professionalId);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select b from Bid b where b.id = :id")
+    java.util.Optional<Bid> findByIdForUpdate(@Param("id") String id);
 }

@@ -113,36 +113,34 @@ class UserServiceTest {
     }
 
     @Test
-    void addRoleFromClientGrantsFreeAcceptancesOnlyOnce() {
-        User u = user("u1"); // CLIENT sin cortesías
+    void addRoleFromClientGrantsSubscriptionFreeServices() {
+        User u = user("u1"); // CLIENT sin suscripción
         when(users.findById("u1")).thenReturn(Optional.of(u));
         when(users.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
 
         UserDto upgraded = service.addRole("u1", "PROFESSIONAL");
 
         assertEquals("BOTH", upgraded.getRole());
-        assertEquals(com.galibu.backend.wallet.WalletService.FREE_ACCEPTANCES,
-            upgraded.getFreeAcceptancesRemaining());
+        // Un cliente que se hace BOTH tiene 3 servicios gratis por defecto
+        // (subscriptionPlan sigue FREE, subscriptionStatus NONE).
+        assertEquals("FREE", upgraded.getSubscriptionPlan());
+        assertEquals("NONE", upgraded.getSubscriptionStatus());
 
-        // Si ya las consumió, una nueva llamada no las repone.
-        u.setFreeAcceptancesRemaining(0);
+        // Si ya era BOTH, una nueva llamada no cambia nada.
         UserDto again = service.addRole("u1", "CLIENT");
         assertEquals("BOTH", again.getRole());
-        assertEquals(0, again.getFreeAcceptancesRemaining());
     }
 
     @Test
-    void addRoleFromProfessionalDoesNotResetFreeAcceptances() {
+    void addRoleFromProfessionalDoesNotResetSubscription() {
         User u = user("p1");
         u.setRole("PROFESSIONAL");
-        u.setFreeAcceptancesRemaining(0); // ya usó sus 3 cortesías
         when(users.findById("p1")).thenReturn(Optional.of(u));
         when(users.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
 
         UserDto upgraded = service.addRole("p1", "CLIENT");
 
         assertEquals("BOTH", upgraded.getRole());
-        assertEquals(0, upgraded.getFreeAcceptancesRemaining());
     }
 
     @Test

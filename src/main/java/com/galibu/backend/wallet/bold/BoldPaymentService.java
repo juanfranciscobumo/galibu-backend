@@ -2,6 +2,7 @@ package com.galibu.backend.wallet.bold;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.galibu.backend.subscription.SubscriptionService;
 import com.galibu.backend.users.User;
 import com.galibu.backend.users.UserRepository;
 import com.galibu.backend.wallet.WalletService;
@@ -37,6 +38,7 @@ public class BoldPaymentService {
     private final WalletService wallet;
     private final UserRepository users;
     private final ObjectMapper mapper;
+    private final SubscriptionService subscriptions;
 
     public BoldPaymentService(
         BoldPaymentOrderRepository orders,
@@ -44,7 +46,8 @@ public class BoldPaymentService {
         BoldProperties props,
         WalletService wallet,
         UserRepository users,
-        ObjectMapper mapper
+        ObjectMapper mapper,
+        SubscriptionService subscriptions
     ) {
         this.orders = orders;
         this.bold = bold;
@@ -52,9 +55,21 @@ public class BoldPaymentService {
         this.wallet = wallet;
         this.users = users;
         this.mapper = mapper;
+        this.subscriptions = subscriptions;
     }
 
+    /** Checkout de recarga de wallet (legado). */
     public BoldCheckoutResponse createCheckout(String userId, double amount) {
+        return createCheckout(userId, amount, "WALLET", null);
+    }
+
+    /**
+     * Crea una orden de pago. El concepto decide qué se acredita al confirmar:
+     * WALLET suma saldo; SUBSCRIPTION activa el plan Pro del usuario.
+     */
+    public BoldCheckoutResponse createCheckout(
+        String userId, double amount, String concept, String plan
+    ) {
         validateAmount(amount);
         if (!props.isConfigured()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
@@ -74,6 +89,8 @@ public class BoldPaymentService {
         order.setId(orderId);
         order.setUserId(userId);
         order.setAmount(amount);
+        order.setConcept(concept == null ? "WALLET" : concept);
+        order.setPlan(plan);
         order.setStatus("CREATING");
         // La orden se guarda dos veces: en el segundo save, merge() copia el
         // estado de esta instancia detached (createdAt = 0) y sobrescribe el
@@ -85,7 +102,7 @@ public class BoldPaymentService {
 
         BoldClient.LinkResult link;
         try {
-            link = bold.createLink(amount, orderId);
+            link = bold.createLink(amount, orderId, conceptLabel(order.getConcept()));
         } catch (RuntimeException e) {
             order.setStatus("FAILED");
             orders.save(order);
@@ -150,7 +167,8 @@ public class BoldPaymentService {
             fresh.getAmount(),
             balance,
             fresh.getTransactionId(),
-            fresh.getPaymentMethod()
+            fresh.getPaymentMethod(),
+            fresh.getConcept()
         );
     }
 
@@ -241,6 +259,18 @@ public class BoldPaymentService {
         order.setPaidAt(System.currentTimeMillis());
         orders.save(order);
 
+        if ("SUBSCRIPTION".equals(order.getConcept())) {
+            subscriptions.activate(
+                order.getUserId(),
+                order.getPlan(),
+                order.getId(),
+                order.getAmount()
+            );
+            log.info("Suscripción Bold acreditada order={} user={} plan={}",
+                order.getId(), order.getUserId(), order.getPlan());
+            return;
+        }
+
         wallet.creditExternal(
             order.getUserId(),
             order.getAmount(),
@@ -249,6 +279,12 @@ public class BoldPaymentService {
 
         log.info("Recarga Bold acreditada order={} user={} amount={}",
             order.getId(), order.getUserId(), order.getAmount());
+    }
+
+    private String conceptLabel(String concept) {
+        return "SUBSCRIPTION".equals(concept)
+            ? "Suscripción Galibu Pro"
+            : "Recarga Galibu";
     }
 
     @Transactional(readOnly = true)

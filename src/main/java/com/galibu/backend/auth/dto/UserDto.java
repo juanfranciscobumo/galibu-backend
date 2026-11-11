@@ -22,7 +22,9 @@ public class UserDto {
     public float rating;
     public int completedJobs;
     public double balance;
-    public int freeAcceptancesRemaining;
+    public String subscriptionPlan;
+    public String subscriptionStatus;
+    public Long subscriptionExpiresAt;
     public String workCategory;
     public String verificationStatus;
     public String profilePhotoUrl;
@@ -45,7 +47,9 @@ public class UserDto {
         dto.setRating(user.getRating());
         dto.setCompletedJobs(user.getCompletedJobs());
         dto.setBalance(user.getBalance());
-        dto.setFreeAcceptancesRemaining(user.getFreeAcceptancesRemaining());
+        dto.setSubscriptionPlan(user.getSubscriptionPlan());
+        dto.setSubscriptionStatus(user.getSubscriptionStatus());
+        dto.setSubscriptionExpiresAt(user.getSubscriptionExpiresAt());
         dto.setWorkCategory(user.getWorkCategory());
         dto.setVerificationStatus(user.getVerificationStatus());
         dto.setProfilePhotoUrl(user.getProfilePhotoUrl());

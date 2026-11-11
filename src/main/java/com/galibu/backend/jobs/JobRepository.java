@@ -15,6 +15,21 @@ public interface JobRepository extends JpaRepository<Job, String> {
 
     List<Job> findByStatusOrderByCreatedAtDesc(String status);
 
+    List<Job> findByStatusInOrderByCreatedAtDesc(Collection<String> statuses);
+
+    /**
+     * Servicios que consumen la cuota gratuita del profesional. Se cuentan los
+     * trabajos que llegaron a estar aceptados, no solo los completados, para que
+     * nadie acumule ofertas aceptadas sin plan.
+     */
+    @Query("select count(j) from Job j where j.professionalId = :uid and j.status in :statuses")
+    long countServicesByProfessionalId(@Param("uid") String uid,
+        @Param("statuses") Collection<String> statuses);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select j from Job j where j.id = :id")
+    java.util.Optional<Job> findByIdForUpdate(@Param("id") String id);
+
     List<Job> findByClientIdOrProfessionalIdOrderByCreatedAtDesc(String clientId, String professionalId);
 
     /**

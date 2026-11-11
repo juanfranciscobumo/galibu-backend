@@ -3,6 +3,7 @@ package com.galibu.backend.bids;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -12,9 +13,9 @@ import com.galibu.backend.bids.dto.CreateBidRequest;
 import com.galibu.backend.jobs.Job;
 import com.galibu.backend.jobs.JobRepository;
 import com.galibu.backend.jobs.dto.CounterRequest;
+import com.galibu.backend.subscription.SubscriptionService;
 import com.galibu.backend.users.User;
 import com.galibu.backend.users.UserRepository;
-import com.galibu.backend.wallet.WalletService;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,7 @@ class BidServiceTest {
     private UserRepository users;
 
     @Mock
-    private WalletService wallet;
+    private SubscriptionService subscriptions;
 
     @Mock
     private com.galibu.backend.chat.ChatService chat;
@@ -87,6 +88,7 @@ class BidServiceTest {
         when(users.findById("pro-1")).thenReturn(Optional.of(pro("pro-1")));
         when(jobs.findById("job-1")).thenReturn(Optional.of(job("job-1")));
         when(bids.findAllByJobIdAndProfessionalId("job-1", "pro-1")).thenReturn(List.of());
+        doNothing().when(subscriptions).assertCanWork("pro-1");
         when(bids.save(any(com.galibu.backend.bids.Bid.class))).thenAnswer(i -> i.getArgument(0));
         when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -108,6 +110,8 @@ class BidServiceTest {
         j.setSuggestedPrice(8000.0);
         when(jobs.findById("job-1")).thenReturn(Optional.of(j));
         when(bids.findAllByJobIdAndProfessionalId("job-1", "pro-1")).thenReturn(List.of());
+        // Nueva oferta: se valida suscripción
+        doNothing().when(subscriptions).assertCanWork("pro-1");
         when(bids.save(any(com.galibu.backend.bids.Bid.class))).thenAnswer(i -> i.getArgument(0));
 
         CreateBidRequest req = new CreateBidRequest();
@@ -124,6 +128,7 @@ class BidServiceTest {
         j.setStatus("NEGOTIATING");
         when(jobs.findById("job-1")).thenReturn(Optional.of(j));
         com.galibu.backend.bids.Bid legacy = bid("bid_old", "PENDING");
+        // Al actualizar una oferta existente NO se valida suscripción (previous no está vacío)
         when(bids.findAllByJobIdAndProfessionalId("job-1", "pro-1")).thenReturn(List.of(legacy));
         when(bids.save(any(com.galibu.backend.bids.Bid.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -138,7 +143,8 @@ class BidServiceTest {
     }
 
     @Test
-    void submitRejectsClientsAndClosedJobs() {        User client = pro("client-1");
+    void submitRejectsClientsAndClosedJobs() {
+        User client = pro("client-1");
         client.setRole("CLIENT");
         when(users.findById("client-1")).thenReturn(Optional.of(client));
         CreateBidRequest req = new CreateBidRequest();
@@ -193,9 +199,11 @@ class BidServiceTest {
         com.galibu.backend.bids.Bid mine = bid("bid-1", "PENDING");
         com.galibu.backend.bids.Bid other = bid("bid-2", "PENDING");
         other.setProfessionalId("pro-2");
-        when(bids.findById("bid-1")).thenReturn(Optional.of(mine));
-        when(jobs.findById("job-1")).thenReturn(Optional.of(job("job-1")));
+        when(bids.findByIdForUpdate("bid-1")).thenReturn(Optional.of(mine));
+        when(jobs.findByIdForUpdate("job-1")).thenReturn(Optional.of(job("job-1")));
         when(bids.findByJobIdOrderByCreatedAtDesc("job-1")).thenReturn(List.of(mine, other));
+        // accept() llama a subscriptions.canWork (boolean)
+        when(subscriptions.canWork("pro-1")).thenReturn(true);
         when(bids.save(any(com.galibu.backend.bids.Bid.class))).thenAnswer(i -> i.getArgument(0));
         when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -211,7 +219,8 @@ class BidServiceTest {
     }
 
     @Test
-    void listForJobShowsAllToClientAndOwnToOthers() {        com.galibu.backend.bids.Bid mine = bid("bid-1", "PENDING");
+    void listForJobShowsAllToClientAndOwnToOthers() {
+        com.galibu.backend.bids.Bid mine = bid("bid-1", "PENDING");
         com.galibu.backend.bids.Bid other = bid("bid-2", "PENDING");
         other.setProfessionalId("pro-2");
         when(jobs.findById("job-1")).thenReturn(Optional.of(job("job-1")));
@@ -234,9 +243,10 @@ class BidServiceTest {
         countered.setProfessionalId("pro-1");
         Job j = job("job-1");
         j.setStatus("NEGOTIATING");
-        when(bids.findById("bid-1")).thenReturn(Optional.of(countered));
-        when(jobs.findById("job-1")).thenReturn(Optional.of(j));
+        when(bids.findByIdForUpdate("bid-1")).thenReturn(Optional.of(countered));
+        when(jobs.findByIdForUpdate("job-1")).thenReturn(Optional.of(j));
         when(bids.findByJobIdOrderByCreatedAtDesc("job-1")).thenReturn(List.of(countered));
+        when(subscriptions.canWork("pro-1")).thenReturn(true);
         when(bids.save(any(com.galibu.backend.bids.Bid.class))).thenAnswer(i -> i.getArgument(0));
         when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
 

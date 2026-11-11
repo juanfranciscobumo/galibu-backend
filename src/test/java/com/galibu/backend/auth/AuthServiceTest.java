@@ -82,13 +82,12 @@ class AuthServiceTest {
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
         verify(users).save(saved.capture());
         assertEquals("CLIENT", saved.getValue().getRole());
-        assertEquals(0, saved.getValue().getFreeAcceptancesRemaining());
         assertEquals(WalletService.INITIAL_BALANCE, saved.getValue().getBalance());
         assertEquals("CLIENT", response.getUser().getRole());
     }
 
     @Test
-    void registerAsProfessionalGrantsFreeAcceptances() {
+    void registerAsProfessionalGrantsFreeServices() {
         when(users.existsByEmail("nuevo@test.com")).thenReturn(false);
         when(passwordEncoder.encode("password123")).thenReturn("hash");
         stubNewUser();
@@ -97,8 +96,12 @@ class AuthServiceTest {
 
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
         verify(users).save(saved.capture());
+        // El registro LOCAL permite elegir PROFESSIONAL.
+        // Los 3 servicios gratis vienen por defecto (subscriptionPlan=FREE, status=NONE).
         assertEquals("PROFESSIONAL", saved.getValue().getRole());
-        assertEquals(WalletService.FREE_ACCEPTANCES, saved.getValue().getFreeAcceptancesRemaining());
+        assertEquals(WalletService.INITIAL_BALANCE, saved.getValue().getBalance());
+        assertEquals("FREE", saved.getValue().getSubscriptionPlan());
+        assertEquals("NONE", saved.getValue().getSubscriptionStatus());
     }
 
     @Test
@@ -119,30 +122,39 @@ class AuthServiceTest {
         when(users.findByEmail("google@test.com")).thenReturn(Optional.empty());
         stubNewUser();
 
-        AuthResponse response = spyService.loginWithGoogle(new GoogleLoginRequest("id-token", null));
+        GoogleLoginRequest req = new GoogleLoginRequest();
+        req.idToken = "id-token";
+        req.mode = "REGISTER";
+
+        AuthResponse response = spyService.loginWithGoogle(req);
 
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
         verify(users).save(saved.capture());
         assertEquals("CLIENT", saved.getValue().getRole());
-        assertEquals(0, saved.getValue().getFreeAcceptancesRemaining());
+        assertEquals(WalletService.INITIAL_BALANCE, saved.getValue().getBalance());
         assertEquals("GOOGLE", saved.getValue().getAuthProvider());
         assertEquals("CLIENT", response.getUser().getRole());
     }
 
     @Test
-    void newGoogleAccountKeepsExplicitProfessionalIntent() {
+    void newGoogleAccountIgnoresRoleSentByApp() {
         AuthService spyService = spy(service);
         doReturn(googlePayload("google@test.com", true, "Ana Google"))
             .when(spyService).verifyGoogleToken("id-token");
         when(users.findByEmail("google@test.com")).thenReturn(Optional.empty());
         stubNewUser();
 
-        spyService.loginWithGoogle(new GoogleLoginRequest("id-token", "PROFESSIONAL"));
+        GoogleLoginRequest req = new GoogleLoginRequest();
+        req.idToken = "id-token";
+        req.mode = "REGISTER";
+        req.role = "PROFESSIONAL"; // ignorado por el backend
+
+        spyService.loginWithGoogle(req);
 
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
         verify(users).save(saved.capture());
-        assertEquals("PROFESSIONAL", saved.getValue().getRole());
-        assertEquals(WalletService.FREE_ACCEPTANCES, saved.getValue().getFreeAcceptancesRemaining());
+        // La cuenta nueva de Google SIEMPRE nace CLIENT
+        assertEquals("CLIENT", saved.getValue().getRole());
     }
 
     @Test
@@ -157,7 +169,12 @@ class AuthServiceTest {
         existing.setAuthProvider("GOOGLE");
         when(users.findByEmail("google@test.com")).thenReturn(Optional.of(existing));
 
-        AuthResponse response = spyService.loginWithGoogle(new GoogleLoginRequest("id-token", "PROFESSIONAL"));
+        GoogleLoginRequest req = new GoogleLoginRequest();
+        req.idToken = "id-token";
+        req.mode = "LOGIN";
+        req.role = "PROFESSIONAL";
+
+        AuthResponse response = spyService.loginWithGoogle(req);
 
         assertEquals("CLIENT", response.getUser().getRole());
     }

@@ -13,4 +13,5 @@ public class BoldOrderStatusResponse {
     private final double balance;
     private final String transactionId;
     private final String paymentMethod;
+    private final String concept;
 }

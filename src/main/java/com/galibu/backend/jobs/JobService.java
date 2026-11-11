@@ -8,9 +8,9 @@ import com.galibu.backend.jobs.dto.CounterRequest;
 import com.galibu.backend.jobs.dto.CreateJobRequest;
 import com.galibu.backend.jobs.dto.JobDto;
 import com.galibu.backend.notifications.NotificationService;
+import com.galibu.backend.subscription.SubscriptionService;
 import com.galibu.backend.users.User;
 import com.galibu.backend.users.UserRepository;
-import com.galibu.backend.wallet.WalletService;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -28,18 +28,19 @@ public class JobService {
     private final UserRepository users;
     private final BidRepository bids;
     private final com.galibu.backend.ratings.RatingService ratingService;
-    private final WalletService wallet;
+    private final SubscriptionService subscriptions;
     private final ChatService chat;
     private final NotificationService notifications;
 
     public JobService(JobRepository jobs, UserRepository users, BidRepository bids,
-            com.galibu.backend.ratings.RatingService ratingService, WalletService wallet,
-            ChatService chat, NotificationService notifications) {
+            com.galibu.backend.ratings.RatingService ratingService,
+            SubscriptionService subscriptions, ChatService chat,
+            NotificationService notifications) {
         this.jobs = jobs;
         this.users = users;
         this.bids = bids;
         this.ratingService = ratingService;
-        this.wallet = wallet;
+        this.subscriptions = subscriptions;
         this.chat = chat;
         this.notifications = notifications;
     }
@@ -87,8 +88,11 @@ public class JobService {
             }
         }
         if (status != null) {
-            for (Job j : jobs.findByStatusOrderByCreatedAtDesc(status.toUpperCase())) {
-                if (seen.add(j.getId())) {
+            // La lista pública incluye OPEN y las negociaciones aún sin
+            // profesional asignado: una oferta no debe "robarle" la solicitud
+            // al resto del tablero.
+            for (Job j : jobs.findByStatusInOrderByCreatedAtDesc(List.of("OPEN", "NEGOTIATING"))) {
+                if (isPublic(j) && seen.add(j.getId())) {
                     merged.add(j);
                 }
             }
@@ -198,6 +202,11 @@ public class JobService {
         if (!uid.equals(job.getClientId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo el cliente puede eliminar su solicitud");
         }
+        if ("ACCEPTED".equals(job.getStatus()) || "IN_PROGRESS".equals(job.getStatus())
+            || "COMPLETED".equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "No puedes eliminar una solicitud aceptada, en curso o completada. Cancelarla si ya no la necesitas.");
+        }
         jobs.delete(job);
     }
 
@@ -226,7 +235,14 @@ public class JobService {
 
     @Transactional
     public JobDto acceptDirect(String uid, String jobId) {
-        Job job = findOr404(jobId);
+        // Lock pesimista: evita aceptar dos veces la misma contratación por
+        // doble toque o reintento.
+        Job job = jobs.findByIdForUpdate(jobId).orElseThrow(() ->
+            new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitud no existe"));
+        if ("ACCEPTED".equals(job.getStatus()) || "COMPLETED".equals(job.getStatus())
+            || "CANCELLED".equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud ya está cerrada");
+        }
         boolean isAssignedPro = job.getProfessionalId() != null && uid.equals(job.getProfessionalId());
         // El cliente también puede aceptar, pero solo la contraoferta vigente del profesional.
         boolean isClientAcceptingProCounter = uid.equals(job.getClientId())
@@ -236,11 +252,9 @@ public class JobService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo el profesional asignado puede hacerlo");
         }
         if (isAssignedPro) {
-            // La tarifa de aceptación la paga el profesional (el cliente acepta gratis).
-            wallet.chargeAcceptFee(uid, jobId, job.getTitle());
-        }
-        if ("ACCEPTED".equals(job.getStatus()) || "COMPLETED".equals(job.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud ya fue aceptada o completada");
+            // Sin cobro por aceptación: solo se exige plan Pro cuando ya usó
+            // sus 3 servicios gratis. El cliente nunca paga aquí.
+            subscriptions.assertCanWork(uid);
         }
         double price = job.getCounterOfferAmount() != null ? job.getCounterOfferAmount()
             : job.getProHourlyRate() != null ? job.getProHourlyRate() : job.getBudgetMin();
@@ -263,6 +277,10 @@ public class JobService {
     public JobDto rejectDirect(String uid, String jobId) {
         Job job = findOr404(jobId);
         requireAssignedProfessional(uid, job);
+        if (!"NEGOTIATING".equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Solo se puede rechazar una contratación pendiente de respuesta");
+        }
         job.setStatus("CANCELLED");
         job.setCounterOfferSender(null);
         Job saved = jobs.save(job);
@@ -289,24 +307,26 @@ public class JobService {
     }
 
     @Transactional
-    public JobDto finishService(String uid, String jobId, int stars, String comment) {
+    public JobDto finishService(String uid, String jobId, Integer stars, String comment) {
         Job job = findOr404(jobId);
         requireParticipant(uid, job);
         if (job.getProfessionalId() == null || job.getProfessionalId().isBlank()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud aún no tiene profesional asignado");
         }
-        if (stars < 1 || stars > 5) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La calificación es obligatoria (1 a 5 estrellas)");
-        }
+        // La calificación es opcional: se registra solo si llega un valor 1-5.
+        boolean shouldRate = stars != null && stars >= 1 && stars <= 5;
         // El servicio se cierra una sola vez: si el otro participante ya lo
         // finalizó, este segundo cierre solo registra su calificación (sin
         // repetir mensajes de sistema ni notificaciones).
         if ("COMPLETED".equals(job.getStatus())) {
-            rateIgnoringDuplicates(uid, jobId, stars, comment);
+            if (shouldRate) {
+                rateIgnoringDuplicates(uid, jobId, stars, comment);
+            }
             return JobDto.from(findOr404(jobId));
         }
-        if (!"IN_PROGRESS".equals(job.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Solo se puede finalizar un servicio en progreso");
+        if (!"IN_PROGRESS".equals(job.getStatus()) && !"ACCEPTED".equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Solo se puede finalizar un servicio aceptado o en progreso");
         }
         job.setStatus("COMPLETED");
         job.setCounterOfferSender(null);
@@ -320,7 +340,9 @@ public class JobService {
                 "El trabajo '" + job.getTitle() + "' ha sido finalizado. Califica al cliente.", jobId);
         }
         // Calificación de quien finaliza (cliente o profesional) en la misma operación.
-        rateIgnoringDuplicates(uid, jobId, stars, comment);
+        if (shouldRate) {
+            rateIgnoringDuplicates(uid, jobId, stars, comment);
+        }
         return JobDto.from(findOr404(jobId));
     }
 

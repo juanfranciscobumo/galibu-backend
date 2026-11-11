@@ -33,6 +33,17 @@ public class BoldPaymentOrder {
     @Column(nullable = false)
     private double amount;
 
+    /** WALLET (recarga legado) o SUBSCRIPTION (plan Pro). */
+    @Column(nullable = false, length = 20)
+    private String concept = "WALLET";
+
+    /** MONTHLY o YEARLY cuando el concepto es SUBSCRIPTION. */
+    @Column(length = 20)
+    private String plan;
+
+    @Column(name = "subscription_id", length = 64)
+    private String subscriptionId;
+
     @Column(name = "payment_link", length = 128)
     private String paymentLink;
 

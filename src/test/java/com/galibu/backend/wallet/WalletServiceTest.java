@@ -37,11 +37,11 @@ class WalletServiceTest {
     }
 
     @Test
-    void rechargeAddsBalanceAndRecords() {
+    void creditExternalAddsBalanceAndRecords() {
         when(users.findById("pro-1")).thenReturn(Optional.of(user("pro-1", 1000.0)));
         when(transactions.save(any(WalletTransaction.class))).thenAnswer(i -> i.getArgument(0));
 
-        WalletTransactionDto dto = service.recharge("pro-1", 50000.0);
+        WalletTransactionDto dto = service.creditExternal("pro-1", 50000.0, "Test");
 
         assertEquals("RECHARGE", dto.getType());
         assertEquals(50000.0, dto.getAmount());
@@ -49,31 +49,9 @@ class WalletServiceTest {
     }
 
     @Test
-    void rechargeRejectsNonPositive() {
+    void creditExternalRejectsNonPositive() {
         ResponseStatusException bad = assertThrows(ResponseStatusException.class,
-            () -> service.recharge("pro-1", 0.0));
+            () -> service.creditExternal("pro-1", 0.0, "Test"));
         assertEquals(HttpStatus.BAD_REQUEST, bad.getStatusCode());
-    }
-
-    @Test
-    void chargeAcceptFeeDeductsAndRecords() {
-        when(users.findById("pro-1")).thenReturn(Optional.of(user("pro-1", 150000.0)));
-        when(transactions.save(any(WalletTransaction.class))).thenAnswer(i -> i.getArgument(0));
-
-        WalletTransactionDto dto = service.chargeAcceptFee("pro-1", "j1", "Plomero");
-
-        assertEquals("ACCEPT_FEE", dto.getType());
-        assertEquals(-WalletService.ACCEPT_FEE, dto.getAmount());
-        assertEquals(150000.0 - WalletService.ACCEPT_FEE, dto.getBalanceAfter());
-        assertEquals("j1", dto.getJobId());
-    }
-
-    @Test
-    void chargeAcceptFeeBlocksWithoutBalance() {
-        when(users.findById("pro-1")).thenReturn(Optional.of(user("pro-1", 1000.0)));
-
-        ResponseStatusException conflict = assertThrows(ResponseStatusException.class,
-            () -> service.chargeAcceptFee("pro-1", "j1", "Plomero"));
-        assertEquals(HttpStatus.CONFLICT, conflict.getStatusCode());
     }
 }

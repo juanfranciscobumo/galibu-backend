@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,9 +14,9 @@ import com.galibu.backend.ratings.RatingService;
 import com.galibu.backend.jobs.dto.CreateJobRequest;
 import com.galibu.backend.jobs.dto.CounterRequest;
 import com.galibu.backend.jobs.dto.JobDto;
+import com.galibu.backend.subscription.SubscriptionService;
 import com.galibu.backend.users.User;
 import com.galibu.backend.users.UserRepository;
-import com.galibu.backend.wallet.WalletService;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -42,7 +43,7 @@ class JobServiceTest {
     private RatingService ratingService;
 
     @Mock
-    private WalletService wallet;
+    private SubscriptionService subscriptions;
 
     @Mock
     private com.galibu.backend.chat.ChatService chat;
@@ -187,25 +188,39 @@ class JobServiceTest {
 
     @Test
     void acceptDirectAssignsPriceWithPrecedenceAndGuards() {
-        Job j = job("j1");
-        j.setStatus("NEGOTIATING");
-        j.setProfessionalId("pro-1");
-        j.setCounterOfferAmount(42000.0);
-        j.setProHourlyRate(50000.0);
-        when(jobs.findById("j1")).thenReturn(Optional.of(j));
+        // Caso 1: profesional asignado acepta con contraoferta
+        Job j1 = job("j1");
+        j1.setStatus("NEGOTIATING");
+        j1.setProfessionalId("pro-1");
+        j1.setCounterOfferAmount(42000.0);
+        j1.setProHourlyRate(50000.0);
+        when(jobs.findByIdForUpdate("j1")).thenReturn(Optional.of(j1));
         when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+        doNothing().when(subscriptions).assertCanWork("pro-1");
 
         JobDto accepted = service.acceptDirect("pro-1", "j1");
         assertEquals("ACCEPTED", accepted.getStatus());
         assertEquals(42000.0, accepted.getFinalPrice());
 
+        // Caso 2: otro usuario intenta aceptar -> FORBIDDEN (job sigue NEGOTIATING)
+        Job j2 = job("j2");
+        j2.setStatus("NEGOTIATING");
+        j2.setProfessionalId("pro-1");
+        j2.setCounterOfferAmount(42000.0);
+        when(jobs.findByIdForUpdate("j2")).thenReturn(Optional.of(j2));
+
         ResponseStatusException forbidden = assertThrows(ResponseStatusException.class,
-            () -> service.acceptDirect("other", "j1"));
+            () -> service.acceptDirect("other", "j2"));
         assertEquals(HttpStatus.FORBIDDEN, forbidden.getStatusCode());
 
-        j.setStatus("ACCEPTED");
+        // Caso 3: reintento del mismo profesional -> CONFLICT (job ya ACCEPTED)
+        Job j3 = job("j3");
+        j3.setStatus("ACCEPTED");
+        j3.setProfessionalId("pro-1");
+        when(jobs.findByIdForUpdate("j3")).thenReturn(Optional.of(j3));
+
         ResponseStatusException conflict = assertThrows(ResponseStatusException.class,
-            () -> service.acceptDirect("pro-1", "j1"));
+            () -> service.acceptDirect("pro-1", "j3"));
         assertEquals(HttpStatus.CONFLICT, conflict.getStatusCode());
     }
 
@@ -216,7 +231,7 @@ class JobServiceTest {
         j.setProfessionalId("pro-1");
         j.setCounterOfferAmount(38000.0);
         j.setCounterOfferSender("PROFESSIONAL");
-        when(jobs.findById("j1")).thenReturn(Optional.of(j));
+        when(jobs.findByIdForUpdate("j1")).thenReturn(Optional.of(j));
         when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
 
         JobDto accepted = service.acceptDirect("client-1", "j1");
@@ -226,7 +241,7 @@ class JobServiceTest {
         Job j2 = job("j2");
         j2.setStatus("NEGOTIATING");
         j2.setProfessionalId("pro-1");
-        when(jobs.findById("j2")).thenReturn(Optional.of(j2));
+        when(jobs.findByIdForUpdate("j2")).thenReturn(Optional.of(j2));
 
         ResponseStatusException forbidden = assertThrows(ResponseStatusException.class,
             () -> service.acceptDirect("client-1", "j2"));
@@ -234,7 +249,8 @@ class JobServiceTest {
     }
 
     @Test
-    void createWithProfessionalAssignsAndNegotiates() {        when(users.findById("client-1")).thenReturn(Optional.of(client("client-1")));
+    void createWithProfessionalAssignsAndNegotiates() {
+        when(users.findById("client-1")).thenReturn(Optional.of(client("client-1")));
         User pro = client("pro-1");
         pro.setRole("PROFESSIONAL");
         when(users.findById("pro-1")).thenReturn(Optional.of(pro));
@@ -313,7 +329,8 @@ class JobServiceTest {
     }
 
     @Test
-    void listEnforcesFilters() {        when(jobs.findByClientIdOrProfessionalIdOrderByCreatedAtDesc("u", "u"))
+    void listEnforcesFilters() {
+        when(jobs.findByClientIdOrProfessionalIdOrderByCreatedAtDesc("u", "u"))
             .thenReturn(List.of(job("j1")));
 
         assertEquals(1, service.list("u", null, null, null).size());
@@ -348,6 +365,7 @@ class JobServiceTest {
             () -> service.finishService("other", "j1", 5, null));
         assertEquals(HttpStatus.FORBIDDEN, forbidden.getStatusCode());
 
+        // stars=5 es una calificación válida
         JobDto finished = service.finishService("pro-1", "j1", 5, "Buen cliente");
         assertEquals("COMPLETED", finished.getStatus());
         verify(ratingService).rate(eq("pro-1"), eq("j1"), any(com.galibu.backend.ratings.dto.CreateRatingRequest.class));
@@ -360,16 +378,18 @@ class JobServiceTest {
     }
 
     @Test
-    void finishRequiresRating() {
-        // El guard de estrellas (1-5) salta antes del save: ese stub sobraría.
+    void finishAllowsOptionalRating() {
+        // stars=null (sin calificar) es válido
         Job j = job("j1");
         j.setStatus("IN_PROGRESS");
         j.setProfessionalId("pro-1");
         when(jobs.findById("j1")).thenReturn(Optional.of(j));
+        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
 
-        ResponseStatusException badRating = assertThrows(ResponseStatusException.class,
-            () -> service.finishService("pro-1", "j1", 0, null));
-        assertEquals(HttpStatus.BAD_REQUEST, badRating.getStatusCode());
+        JobDto finished = service.finishService("pro-1", "j1", null, null);
+        assertEquals("COMPLETED", finished.getStatus());
+        // Sin calificación no se llama al ratingService
+        verify(ratingService, org.mockito.Mockito.never()).rate(any(), any(), any());
     }
 
     @Test
@@ -390,5 +410,42 @@ class JobServiceTest {
 
         assertEquals(1, result.size());
         assertEquals("j9", result.get(0).getId());
+    }
+
+    @Test
+    void deleteBlocksAcceptedAndInProgressJobs() {
+        Job j = job("j1");
+        j.setStatus("ACCEPTED");
+        when(jobs.findById("j1")).thenReturn(Optional.of(j));
+
+        ResponseStatusException blocked = assertThrows(ResponseStatusException.class,
+            () -> service.delete("client-1", "j1"));
+        assertEquals(HttpStatus.CONFLICT, blocked.getStatusCode());
+
+        j.setStatus("IN_PROGRESS");
+        ResponseStatusException blocked2 = assertThrows(ResponseStatusException.class,
+            () -> service.delete("client-1", "j1"));
+        assertEquals(HttpStatus.CONFLICT, blocked2.getStatusCode());
+    }
+
+    @Test
+    void rejectDirectOnlyAllowsNegotiating() {
+        Job j = job("j1");
+        j.setStatus("NEGOTIATING");
+        j.setProfessionalId("pro-1");
+        when(jobs.findById("j1")).thenReturn(Optional.of(j));
+        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+
+        JobDto rejected = service.rejectDirect("pro-1", "j1");
+        assertEquals("CANCELLED", rejected.getStatus());
+
+        Job j2 = job("j2");
+        j2.setStatus("ACCEPTED");
+        j2.setProfessionalId("pro-1");
+        when(jobs.findById("j2")).thenReturn(Optional.of(j2));
+
+        ResponseStatusException blocked = assertThrows(ResponseStatusException.class,
+            () -> service.rejectDirect("pro-1", "j2"));
+        assertEquals(HttpStatus.CONFLICT, blocked.getStatusCode());
     }
 }

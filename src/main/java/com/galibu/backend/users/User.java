@@ -47,9 +47,17 @@ public class User {
     @Column(nullable = false)
     private double balance = 0.0;
 
-    /** Trabajos que el profesional puede aceptar sin pagar la tarifa (cortesía). */
-    @Column(name = "free_acceptances_remaining", nullable = false)
-    private int freeAcceptancesRemaining = 0;
+    /** Plan de suscripción del profesional: FREE o PRO. */
+    @Column(name = "subscription_plan", nullable = false, length = 20)
+    private String subscriptionPlan = "FREE";
+
+    /** NONE, ACTIVE, CANCELLED o EXPIRED. */
+    @Column(name = "subscription_status", nullable = false, length = 20)
+    private String subscriptionStatus = "NONE";
+
+    /** Fin del acceso Pro. Null cuando nunca se ha suscrito. */
+    @Column(name = "subscription_expires_at")
+    private Long subscriptionExpiresAt;
 
     @Column(name = "document_type", length = 60)
     private String documentType;

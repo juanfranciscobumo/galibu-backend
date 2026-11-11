@@ -37,10 +37,11 @@ public class BoldClient {
         this.rest = builder.baseUrl(baseUrl).build();
     }
 
-    public LinkResult createLink(double amount, String reference) {
+    public LinkResult createLink(double amount, String reference, String conceptLabel) {
         requireConfigured();
 
-        String description = "Recarga Galibu " + reference;
+        String description = (conceptLabel == null || conceptLabel.isBlank()
+            ? "Pago Galibu " : conceptLabel) + " " + reference;
         if (description.length() > 100) {
             description = description.substring(0, 100);
         }

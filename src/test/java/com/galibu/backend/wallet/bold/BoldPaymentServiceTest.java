@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.galibu.backend.subscription.SubscriptionService;
 import com.galibu.backend.users.UserRepository;
 import com.galibu.backend.wallet.WalletService;
 import java.nio.charset.StandardCharsets;
@@ -37,6 +38,9 @@ class BoldPaymentServiceTest {
     @Mock
     private UserRepository users;
 
+    @Mock
+    private SubscriptionService subscriptions;
+
     private BoldPaymentService service;
 
     @BeforeEach
@@ -45,7 +49,7 @@ class BoldPaymentServiceTest {
         props.setSecretKey("configured-secret");
         props.setTestMode(true);
         service = new BoldPaymentService(
-            orders, bold, props, wallet, users, new ObjectMapper());
+            orders, bold, props, wallet, users, new ObjectMapper(), subscriptions);
     }
 
     @Test

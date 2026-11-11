@@ -7,9 +7,9 @@ import com.galibu.backend.jobs.Job;
 import com.galibu.backend.jobs.JobRepository;
 import com.galibu.backend.jobs.dto.CounterRequest;
 import com.galibu.backend.notifications.NotificationService;
+import com.galibu.backend.subscription.SubscriptionService;
 import com.galibu.backend.users.User;
 import com.galibu.backend.users.UserRepository;
-import com.galibu.backend.wallet.WalletService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -22,16 +22,16 @@ public class BidService {
     private final BidRepository bids;
     private final JobRepository jobs;
     private final UserRepository users;
-    private final WalletService wallet;
+    private final SubscriptionService subscriptions;
     private final ChatService chat;
     private final NotificationService notifications;
 
     public BidService(BidRepository bids, JobRepository jobs, UserRepository users,
-            WalletService wallet, ChatService chat, NotificationService notifications) {
+            SubscriptionService subscriptions, ChatService chat, NotificationService notifications) {
         this.bids = bids;
         this.jobs = jobs;
         this.users = users;
-        this.wallet = wallet;
+        this.subscriptions = subscriptions;
         this.chat = chat;
         this.notifications = notifications;
     }
@@ -67,6 +67,11 @@ public class BidService {
         }
         String bidId = "bid_" + jobId + "_" + uid;
         List<Bid> previous = bids.findAllByJobIdAndProfessionalId(jobId, uid);
+        // La cuota gratuita se valida al tomar un servicio nuevo. Modificar una
+        // oferta ya enviada no consume nada y no debe bloquearse.
+        if (previous.isEmpty()) {
+            subscriptions.assertCanWork(uid);
+        }
         for (Bid dupe : previous) {
             if (!dupe.getId().equals(bidId)) {
                 bids.delete(dupe);
@@ -159,8 +164,12 @@ public class BidService {
 
     @Transactional
     public BidDto accept(String uid, String bidId) {
-        Bid bid = findBidOr404(bidId);
-        Job job = findJobOr404(bid.getJobId());
+        // Lock pesimista: dos aceptaciones simultáneas de la misma oferta no
+        // pueden pasar el chequeo de estado ni crear dos trabajos aceptados.
+        Bid bid = bids.findByIdForUpdate(bidId).orElseThrow(() ->
+            new ResponseStatusException(HttpStatus.NOT_FOUND, "Oferta no existe"));
+        Job job = jobs.findByIdForUpdate(bid.getJobId()).orElseThrow(() ->
+            new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitud no existe"));
         // Bloquea ofertas históricas donde el mismo usuario es cliente y profesional.
         if (bid.getProfessionalId() != null && bid.getProfessionalId().equals(job.getClientId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -179,8 +188,13 @@ public class BidService {
         if ("ACCEPTED".equals(bid.getStatus()) || "REJECTED".equals(bid.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La oferta ya fue decidida");
         }
-        // La tarifa de aceptación la paga el profesional cuya oferta se acepta.
-        wallet.chargeAcceptFee(bid.getProfessionalId(), job.getId(), job.getTitle());
+        // El profesional debe tener plan activo o cuota gratuita disponible.
+        // Se avisa al cliente con un conflicto claro (no un paywall para él).
+        if (!subscriptions.canWork(bid.getProfessionalId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Este profesional ya no tiene servicios disponibles en su plan. "
+                    + "Elige otra oferta o pídele que active Galibu Pro.");
+        }
         bid.setStatus("ACCEPTED");
         Bid saved = bids.save(bid);
         for (Bid other : bids.findByJobIdOrderByCreatedAtDesc(job.getId())) {

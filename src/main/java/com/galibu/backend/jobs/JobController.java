@@ -123,9 +123,9 @@ public class JobController {
     }
 
     public record FinishServiceRequest(
-        @Min(value = 1, message = "La calificación es obligatoria (1 a 5 estrellas)")
-        @Max(value = 5, message = "La calificación es obligatoria (1 a 5 estrellas)")
-        int stars,
+        @Min(value = 0, message = "La calificación debe estar entre 0 y 5 estrellas")
+        @Max(value = 5, message = "La calificación debe estar entre 0 y 5 estrellas")
+        Integer stars,
         @Size(max = 2000) String comment
     ) {
     }
