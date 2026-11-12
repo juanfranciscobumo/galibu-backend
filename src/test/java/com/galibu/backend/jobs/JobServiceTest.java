@@ -225,6 +225,48 @@ class JobServiceTest {
     }
 
     @Test
+    void acceptDirectUsesClientBudgetOverProRate() {
+        // Sin contraoferta: el presupuesto del cliente (budgetMin) manda sobre
+        // la tarifa de referencia del profesional.
+        Job withBudget = job("j1");
+        withBudget.setStatus("NEGOTIATING");
+        withBudget.setProfessionalId("pro-1");
+        withBudget.setBudgetMin(90000.0);
+        withBudget.setProHourlyRate(50000.0);
+        when(jobs.findByIdForUpdate("j1")).thenReturn(Optional.of(withBudget));
+        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+        doNothing().when(subscriptions).assertCanWork("pro-1");
+
+        JobDto accepted = service.acceptDirect("pro-1", "j1");
+        assertEquals(90000.0, accepted.getFinalPrice());
+
+        // Sin presupuesto ("precio a convenir") la tarifa del profesional es
+        // solo el respaldo, nunca un valor inventado por la app.
+        Job noBudget = job("j2");
+        noBudget.setStatus("NEGOTIATING");
+        noBudget.setProfessionalId("pro-2");
+        noBudget.setBudgetMin(0.0);
+        noBudget.setProHourlyRate(60000.0);
+        when(jobs.findByIdForUpdate("j2")).thenReturn(Optional.of(noBudget));
+        doNothing().when(subscriptions).assertCanWork("pro-2");
+
+        JobDto fallback = service.acceptDirect("pro-2", "j2");
+        assertEquals(60000.0, fallback.getFinalPrice());
+
+        // Sin presupuesto ni tarifa: no se puede aceptar, hay que cotizar.
+        Job empty = job("j3");
+        empty.setStatus("NEGOTIATING");
+        empty.setProfessionalId("pro-3");
+        empty.setBudgetMin(0.0);
+        when(jobs.findByIdForUpdate("j3")).thenReturn(Optional.of(empty));
+        doNothing().when(subscriptions).assertCanWork("pro-3");
+
+        ResponseStatusException noPrice = assertThrows(ResponseStatusException.class,
+            () -> service.acceptDirect("pro-3", "j3"));
+        assertEquals(HttpStatus.BAD_REQUEST, noPrice.getStatusCode());
+    }
+
+    @Test
     void acceptDirectAllowsClientOnlyOnProCounter() {
         Job j = job("j1");
         j.setStatus("NEGOTIATING");
@@ -326,6 +368,49 @@ class JobServiceTest {
         req.setAddress("Cl 1");
         JobDto created2 = service.create("client-1", req);
         assertEquals("OPEN", created2.getStatus());
+    }
+
+    @Test
+    void createAllowsMultipleChatThreadsInSameLocation() {
+        // Los hilos de consulta (chat_*) no son solicitudes de servicio y no
+        // deben bloquearse por duplicado de ubicación/categoría: un cliente
+        // puede consultar a varios profesionales de la misma zona.
+        when(users.findById("client-1")).thenReturn(Optional.of(client("client-1")));
+        User pro1 = client("pro-1");
+        pro1.setRole("PROFESSIONAL");
+        User pro2 = client("pro-2");
+        pro2.setRole("PROFESSIONAL");
+        when(users.findById("pro-1")).thenReturn(Optional.of(pro1));
+        when(users.findById("pro-2")).thenReturn(Optional.of(pro2));
+        Job existing = job("j0");
+        existing.setStatus("OPEN");
+        existing.setCategory("Plomería");
+        existing.setDepartment("Antioquia");
+        existing.setMunicipality("Rionegro");
+        existing.setAddress("Cl 1");
+        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+
+        CreateJobRequest first = new CreateJobRequest();
+        first.setId("chat_" + "a".repeat(32));
+        first.setTitle("Consulta");
+        first.setCategory("Plomería");
+        first.setDepartment("Antioquia");
+        first.setMunicipality("Rionegro");
+        first.setAddress("Cl 1");
+        first.setProfessionalId("pro-1");
+        JobDto created = service.create("client-1", first);
+        assertEquals("NEGOTIATING", created.getStatus());
+
+        CreateJobRequest second = new CreateJobRequest();
+        second.setId("chat_" + "b".repeat(32));
+        second.setTitle("Consulta");
+        second.setCategory("Plomería");
+        second.setDepartment("Antioquia");
+        second.setMunicipality("Rionegro");
+        second.setAddress("Cl 1");
+        second.setProfessionalId("pro-2");
+        JobDto created2 = service.create("client-1", second);
+        assertEquals("NEGOTIATING", created2.getStatus());
     }
 
     @Test

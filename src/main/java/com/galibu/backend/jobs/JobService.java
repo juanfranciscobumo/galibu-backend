@@ -154,9 +154,16 @@ public class JobService {
         }
         Job saved = jobs.save(job);
         boolean directHire = saved.getProfessionalId() != null && !saved.getProfessionalId().isBlank();
+        boolean chatThread = saved.getId() != null && saved.getId().startsWith("chat_");
         if (directHire) {
-            notifications.notifyUser(saved.getProfessionalId(), "Nueva contratación directa",
-                "Te han contratado directamente para '" + saved.getTitle() + "'. Revisa la solicitud.", saved.getId());
+            if (chatThread) {
+                notifications.notifyUser(saved.getProfessionalId(), "Nueva consulta",
+                    "Un cliente quiere hablar contigo sobre '" + saved.getCategory()
+                        + "'. Responde desde Mensajes.", saved.getId());
+            } else {
+                notifications.notifyUser(saved.getProfessionalId(), "Nueva contratación directa",
+                    "Te han contratado directamente para '" + saved.getTitle() + "'. Revisa la solicitud.", saved.getId());
+            }
         } else {
             // Nueva solicitud abierta: avisar a profesionales con categoría compatible
             // (o sin categoría definida) para que la vean al instante.
@@ -256,8 +263,16 @@ public class JobService {
             // sus 3 servicios gratis. El cliente nunca paga aquí.
             subscriptions.assertCanWork(uid);
         }
+        // La oferta del cliente (budgetMin) es el precio acordado; la tarifa
+        // del profesional solo es una referencia y se usa si no hubo oferta.
         double price = job.getCounterOfferAmount() != null ? job.getCounterOfferAmount()
-            : job.getProHourlyRate() != null ? job.getProHourlyRate() : job.getBudgetMin();
+            : job.getBudgetMin() > 0 ? job.getBudgetMin()
+            : job.getProHourlyRate() != null ? job.getProHourlyRate() : 0.0;
+        if (price <= 0) {
+            // "Precio a convenir" sin referencia: hay que cotizar antes de aceptar.
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "Propón un precio antes de aceptar: esta solicitud quedó a convenir");
+        }
         job.setStatus("ACCEPTED");
         job.setFinalPrice(price);
         job.setCounterOfferSender(null);
@@ -368,6 +383,11 @@ public class JobService {
      * (COMPLETED/CANCELLED) no bloquean.
      */
     private void rejectDuplicateActiveRequest(String uid, CreateJobRequest req) {
+        // Los hilos de chat de consulta no son solicitudes de servicio: se
+        // crean aunque exista una solicitud activa en la misma ubicación.
+        if (req.getId() != null && req.getId().startsWith("chat_")) {
+            return;
+        }
         for (Job j : jobs.findByClientIdOrderByCreatedAtDesc(uid)) {
             if ("COMPLETED".equals(j.getStatus()) || "CANCELLED".equals(j.getStatus())) {
                 continue;
