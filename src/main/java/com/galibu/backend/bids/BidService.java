@@ -85,6 +85,30 @@ public class BidService {
         }
         boolean isCounter = existing != null || !previous.isEmpty();
         Bid bid = existing != null ? existing : new Bid();
+        String quoteType = normalizeQuoteType(req.getQuoteType());
+        if (req.getQuoteType() == null || req.getQuoteType().isBlank()) {
+            quoteType = existing != null && existing.getQuoteType() != null
+                ? existing.getQuoteType() : "ESTIMATED";
+        }
+        boolean visitRequired = req.getVisitRequired() != null
+            ? req.getVisitRequired()
+            : existing != null && existing.isVisitRequired();
+        if ("AFTER_VISIT".equals(quoteType)) {
+            visitRequired = true;
+        }
+        boolean materialsIncluded = req.getMaterialsIncluded() != null
+            ? req.getMaterialsIncluded()
+            : existing != null && existing.isMaterialsIncluded();
+        Double visitFee = req.getVisitFee();
+        if (visitFee != null && visitFee < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "El costo de la visita no puede ser negativo");
+        }
+        Double materialsCost = req.getMaterialsCost();
+        if (materialsCost != null && materialsCost < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "El costo de los materiales no puede ser negativo");
+        }
         bid.setId(bidId);
         bid.setJobId(jobId);
         bid.setProfessionalId(uid);
@@ -93,6 +117,12 @@ public class BidService {
         bid.setProfessionalPhoto(user.getProfilePhotoUrl());
         bid.setAmount(req.getAmount());
         bid.setSuggestedPrice(job.getSuggestedPrice());
+        bid.setQuoteType(quoteType);
+        bid.setVisitRequired(visitRequired);
+        bid.setVisitFee(visitRequired ? visitFee : null);
+        bid.setMaterialsIncluded(materialsIncluded);
+        bid.setMaterialsCost(materialsIncluded ? materialsCost : null);
+        bid.setCounterRound(isCounter ? bid.getCounterRound() + 1 : 0);
         if (req.getComment() != null && !req.getComment().isBlank()) {
             bid.setComment(req.getComment());
         } else if (bid.getComment() == null) {
@@ -140,6 +170,7 @@ public class BidService {
         bid.setAmount(req.getAmount());
         bid.setLastCounterOfferAmount(req.getAmount());
         bid.setStatus(isClient ? "COUNTERED_BY_CLIENT" : "COUNTERED_BY_PROFESSIONAL");
+        bid.setCounterRound(bid.getCounterRound() + 1);
         Bid saved = bids.save(bid);
         String who = isClient ? "El cliente" : "El profesional";
         notifications.notifyUser(isClient ? bid.getProfessionalId() : job.getClientId(),
@@ -216,6 +247,19 @@ public class BidService {
         notifications.notifyUser(job.getClientId(), "Oferta aceptada",
             "Has aceptado la oferta de " + bid.getProfessionalName() + " para '" + job.getTitle() + "'.", job.getId());
         return BidDto.from(saved);
+    }
+
+    /** Normaliza el tipo de cotizacion a uno de los valores soportados. */
+    private String normalizeQuoteType(String quoteType) {
+        if (quoteType == null || quoteType.isBlank()) {
+            return "ESTIMATED";
+        }
+        String value = quoteType.trim().toUpperCase();
+        return switch (value) {
+            case "AFTER_VISIT", "VISIT", "TRAS_VISITA" -> "AFTER_VISIT";
+            case "FIXED", "CLOSED", "CERRADA" -> "FIXED";
+            default -> "ESTIMATED";
+        };
     }
 
     private Bid findBidOr404(String bidId) {

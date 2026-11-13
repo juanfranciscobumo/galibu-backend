@@ -2,6 +2,7 @@ package com.galibu.backend.bids;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.never;
@@ -188,10 +189,60 @@ class BidServiceTest {
         BidDto byClient = service.counter("client-1", "bid-1", new CounterRequest(9000.0));
         assertEquals("COUNTERED_BY_CLIENT", byClient.getStatus());
         assertEquals(9000.0, byClient.getAmount());
+        assertEquals(1, byClient.getCounterRound());
 
         ResponseStatusException forbidden = assertThrows(ResponseStatusException.class,
             () -> service.counter("stranger", "bid-1", new CounterRequest(9000.0)));
         assertEquals(HttpStatus.FORBIDDEN, forbidden.getStatusCode());
+    }
+
+    @Test
+    void submitStoresQuoteDetailsAndNormalizesType() {
+        when(users.findById("pro-1")).thenReturn(Optional.of(pro("pro-1")));
+        when(jobs.findById("job-1")).thenReturn(Optional.of(job("job-1")));
+        when(bids.findAllByJobIdAndProfessionalId("job-1", "pro-1")).thenReturn(List.of());
+        doNothing().when(subscriptions).assertCanWork("pro-1");
+        when(bids.save(any(com.galibu.backend.bids.Bid.class))).thenAnswer(i -> i.getArgument(0));
+        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+
+        CreateBidRequest req = new CreateBidRequest();
+        req.setAmount(120000.0);
+        req.setQuoteType("after_visit");
+        req.setVisitRequired(true);
+        req.setVisitFee(20000.0);
+        req.setMaterialsIncluded(true);
+        req.setMaterialsCost(35000.0);
+
+        BidDto created = service.submit("pro-1", "job-1", req);
+
+        assertEquals("AFTER_VISIT", created.getQuoteType());
+        assertTrue(created.isVisitRequired());
+        assertEquals(20000.0, created.getVisitFee());
+        assertTrue(created.isMaterialsIncluded());
+        assertEquals(35000.0, created.getMaterialsCost());
+        assertEquals(0, created.getCounterRound());
+    }
+
+    @Test
+    void submitRejectsNegativeVisitAndMaterialsCost() {
+        when(users.findById("pro-1")).thenReturn(Optional.of(pro("pro-1")));
+        when(jobs.findById("job-1")).thenReturn(Optional.of(job("job-1")));
+        when(bids.findAllByJobIdAndProfessionalId("job-1", "pro-1")).thenReturn(List.of());
+
+        CreateBidRequest req = new CreateBidRequest();
+        req.setAmount(100000.0);
+        req.setVisitRequired(true);
+        req.setVisitFee(-1.0);
+        ResponseStatusException visit = assertThrows(ResponseStatusException.class,
+            () -> service.submit("pro-1", "job-1", req));
+        assertEquals(HttpStatus.BAD_REQUEST, visit.getStatusCode());
+
+        req.setVisitFee(null);
+        req.setMaterialsIncluded(true);
+        req.setMaterialsCost(-5.0);
+        ResponseStatusException materials = assertThrows(ResponseStatusException.class,
+            () -> service.submit("pro-1", "job-1", req));
+        assertEquals(HttpStatus.BAD_REQUEST, materials.getStatusCode());
     }
 
     @Test

@@ -20,5 +20,19 @@ public class CreateBidRequest {
     public String comment;
 
     public int durationHours = 1;
-}
 
+    /** ESTIMATED (estimada), AFTER_VISIT (tras visita) o FIXED (cerrada). */
+    public String quoteType;
+
+    /** La cotizacion requiere visita tecnica. */
+    public Boolean visitRequired;
+
+    /** Costo informativo de la visita tecnica (opcional). */
+    public Double visitFee;
+
+    /** El precio incluye materiales. */
+    public Boolean materialsIncluded;
+
+    /** Costo estimado de materiales (opcional, informativo). */
+    public Double materialsCost;
+}

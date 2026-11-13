@@ -24,6 +24,12 @@ public class BidDto {
     public String status;
     public Double lastCounterOfferAmount;
     public Double suggestedPrice;
+    public String quoteType;
+    public boolean visitRequired;
+    public Double visitFee;
+    public boolean materialsIncluded;
+    public Double materialsCost;
+    public int counterRound;
     public long createdAt;
 
     public static BidDto from(Bid bid) {
@@ -40,8 +46,13 @@ public class BidDto {
         dto.setStatus(bid.getStatus());
         dto.setLastCounterOfferAmount(bid.getLastCounterOfferAmount());
         dto.setSuggestedPrice(bid.getSuggestedPrice());
+        dto.setQuoteType(bid.getQuoteType() == null ? "ESTIMATED" : bid.getQuoteType());
+        dto.setVisitRequired(bid.isVisitRequired());
+        dto.setVisitFee(bid.getVisitFee());
+        dto.setMaterialsIncluded(bid.isMaterialsIncluded());
+        dto.setMaterialsCost(bid.getMaterialsCost());
+        dto.setCounterRound(bid.getCounterRound());
         dto.setCreatedAt(bid.getCreatedAt());
         return dto;
     }
 }
-

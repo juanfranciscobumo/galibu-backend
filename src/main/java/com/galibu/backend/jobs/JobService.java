@@ -250,11 +250,18 @@ public class JobService {
         bid.setAmount(amount);
         bid.setDurationHours(1);
         bid.setStatus(isCounter ? (isClient ? "COUNTERED_BY_CLIENT" : "COUNTERED_BY_PROFESSIONAL") : "PENDING");
+        if (bid.getQuoteType() == null || bid.getQuoteType().isBlank()) {
+            bid.setQuoteType("ESTIMATED");
+        }
+        // Cada propuesta sobre una oferta ya existente abre una nueva ronda.
+        bid.setCounterRound(isCounter ? bid.getCounterRound() + 1 : 0);
         Bid saved = bids.save(bid);
         String who = isClient ? "El cliente" : "El profesional";
+        String roundText = saved.getCounterRound() > 0
+            ? " (ronda " + saved.getCounterRound() + ")" : "";
         String target = isClient ? job.getProfessionalId() : job.getClientId();
         chat.postSystemMessage(jobId, "Sistema",
-            who + " propuso un precio de $" + formatAmount(amount) + " COP.");
+            who + " propuso un precio de $" + formatAmount(amount) + " COP" + roundText + ".");
         if (target != null && !target.isBlank()) {
             notifications.notifyUser(target, "Nueva propuesta de precio",
                 who + " propuso $" + formatAmount(amount) + " COP para '" + job.getTitle() + "'.", jobId);

@@ -55,6 +55,26 @@ public class Bid {
     @Column(name = "suggested_price")
     private Double suggestedPrice;
 
+    /** ESTIMATED (estimada), AFTER_VISIT (tras visita) o FIXED (cerrada). */
+    @Column(name = "quote_type", nullable = false, length = 20)
+    private String quoteType = "ESTIMATED";
+
+    @Column(name = "visit_required", nullable = false)
+    private boolean visitRequired = false;
+
+    @Column(name = "visit_fee")
+    private Double visitFee;
+
+    @Column(name = "materials_included", nullable = false)
+    private boolean materialsIncluded = false;
+
+    @Column(name = "materials_cost")
+    private Double materialsCost;
+
+    /** Ronda de negociacion: 0 en la primera oferta, +1 por cada contraoferta. */
+    @Column(name = "counter_round", nullable = false)
+    private int counterRound = 0;
+
     @Column(name = "created_at", nullable = false)
     private long createdAt;
 

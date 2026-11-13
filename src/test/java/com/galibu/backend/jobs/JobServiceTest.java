@@ -2,6 +2,7 @@ package com.galibu.backend.jobs;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -211,6 +212,40 @@ class JobServiceTest {
         ResponseStatusException forbidden = assertThrows(ResponseStatusException.class,
             () -> service.proposePrice("client-1", "j2", 90000.0));
         assertEquals(HttpStatus.FORBIDDEN, forbidden.getStatusCode());
+    }
+
+    @Test
+    void proposePriceOnExistingBidStartsNewRoundAndKeepsQuoteDetails() {
+        Job j = job("j1");
+        j.setStatus("NEGOTIATING");
+        j.setProfessionalId("pro-1");
+        when(jobs.findById("j1")).thenReturn(Optional.of(j));
+        when(users.findById("client-1")).thenReturn(Optional.of(client("client-1")));
+        Bid existing = new Bid();
+        existing.setId("bid_j1_client-1");
+        existing.setJobId("j1");
+        existing.setProfessionalId("client-1");
+        existing.setProfessionalName("Cli");
+        existing.setAmount(100000.0);
+        existing.setStatus("COUNTERED_BY_PROFESSIONAL");
+        existing.setQuoteType("AFTER_VISIT");
+        existing.setVisitRequired(true);
+        existing.setVisitFee(15000.0);
+        existing.setMaterialsIncluded(true);
+        existing.setMaterialsCost(20000.0);
+        existing.setCounterRound(0);
+        when(bids.findAllByJobIdAndProfessionalId("j1", "client-1"))
+            .thenReturn(List.of(existing));
+        when(bids.save(any(Bid.class))).thenAnswer(i -> i.getArgument(0));
+
+        BidDto proposed = service.proposePrice("client-1", "j1", 90000.0);
+
+        assertEquals(1, proposed.getCounterRound());
+        assertEquals("AFTER_VISIT", proposed.getQuoteType());
+        assertTrue(proposed.isVisitRequired());
+        assertEquals(15000.0, proposed.getVisitFee());
+        assertTrue(proposed.isMaterialsIncluded());
+        assertEquals(20000.0, proposed.getMaterialsCost());
     }
 
     @Test
