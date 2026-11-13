@@ -4,9 +4,9 @@ import com.galibu.backend.common.TextUtils;
 import com.galibu.backend.bids.Bid;
 import com.galibu.backend.bids.BidRepository;
 import com.galibu.backend.chat.ChatService;
-import com.galibu.backend.jobs.dto.CounterRequest;
 import com.galibu.backend.jobs.dto.CreateJobRequest;
 import com.galibu.backend.jobs.dto.JobDto;
+import com.galibu.backend.bids.dto.BidDto;
 import com.galibu.backend.notifications.NotificationService;
 import com.galibu.backend.subscription.SubscriptionService;
 import com.galibu.backend.users.User;
@@ -217,91 +217,49 @@ public class JobService {
         jobs.delete(job);
     }
 
+    /**
+     * Propone (o actualiza) un precio para un trabajo desde el chat.
+     * Crea una oferta del usuario si no existe, o contraoferta la vigente.
+     * Usado por la tarjeta "Acordar precio" del chat.
+     */
     @Transactional
-    public JobDto counter(String uid, String jobId, CounterRequest req) {
+    public BidDto proposePrice(String uid, String jobId, Double amount) {
         Job job = findOr404(jobId);
-        requireParticipant(uid, job);
         if (!"OPEN".equals(job.getStatus()) && !"NEGOTIATING".equals(job.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud no admite contraofertas en su estado actual");
-        }
-        job.setStatus("NEGOTIATING");
-        job.setCounterOfferAmount(req.getAmount());
-        job.setCounterOfferSender(uid.equals(job.getClientId()) ? "CLIENT" : "PROFESSIONAL");
-        Job saved = jobs.save(job);
-        String who = uid.equals(job.getClientId()) ? "El cliente" : "El profesional";
-        chat.postSystemMessage(jobId, "Sistema",
-            "¡" + who + " propuso una nueva tarifa de $" + formatAmount(req.getAmount()) + "/h!");
-        String otherId = uid.equals(job.getClientId()) ? job.getProfessionalId() : job.getClientId();
-        if (otherId != null && !otherId.isBlank()) {
-            notifications.notifyUser(otherId, "Nueva contraoferta",
-                who + " propuso una nueva tarifa de $" + formatAmount(req.getAmount())
-                    + " para '" + job.getTitle() + "'.", jobId);
-        }
-        return JobDto.from(saved);
-    }
-
-    @Transactional
-    public JobDto acceptDirect(String uid, String jobId) {
-        // Lock pesimista: evita aceptar dos veces la misma contratación por
-        // doble toque o reintento.
-        Job job = jobs.findByIdForUpdate(jobId).orElseThrow(() ->
-            new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitud no existe"));
-        if ("ACCEPTED".equals(job.getStatus()) || "COMPLETED".equals(job.getStatus())
-            || "CANCELLED".equals(job.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud ya está cerrada");
-        }
-        boolean isAssignedPro = job.getProfessionalId() != null && uid.equals(job.getProfessionalId());
-        // El cliente también puede aceptar, pero solo la contraoferta vigente del profesional.
-        boolean isClientAcceptingProCounter = uid.equals(job.getClientId())
-            && "PROFESSIONAL".equals(job.getCounterOfferSender())
-            && job.getCounterOfferAmount() != null;
-        if (!isAssignedPro && !isClientAcceptingProCounter) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo el profesional asignado puede hacerlo");
-        }
-        if (isAssignedPro) {
-            // Sin cobro por aceptación: solo se exige plan Pro cuando ya usó
-            // sus 3 servicios gratis. El cliente nunca paga aquí.
-            subscriptions.assertCanWork(uid);
-        }
-        // La oferta del cliente (budgetMin) es el precio acordado; la tarifa
-        // del profesional solo es una referencia y se usa si no hubo oferta.
-        double price = job.getCounterOfferAmount() != null ? job.getCounterOfferAmount()
-            : job.getBudgetMin() > 0 ? job.getBudgetMin()
-            : job.getProHourlyRate() != null ? job.getProHourlyRate() : 0.0;
-        if (price <= 0) {
-            // "Precio a convenir" sin referencia: hay que cotizar antes de aceptar.
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "Propón un precio antes de aceptar: esta solicitud quedó a convenir");
-        }
-        job.setStatus("ACCEPTED");
-        job.setFinalPrice(price);
-        job.setCounterOfferSender(null);
-        Job saved = jobs.save(job);
-        chat.postSystemMessage(jobId, "Sistema",
-            "¡El profesional aceptó la solicitud de contratación directa! Chat seguro iniciado.");
-        notifications.notifyUser(job.getClientId(), "Solicitud aceptada",
-            "El profesional aceptó tu solicitud de '" + job.getTitle() + "'.", jobId);
-        if (job.getProfessionalId() != null) {
-            notifications.notifyUser(job.getProfessionalId(), "Contratación iniciada",
-                "Has sido contratado para '" + job.getTitle() + "'.", jobId);
-        }
-        return JobDto.from(saved);
-    }
-
-    @Transactional
-    public JobDto rejectDirect(String uid, String jobId) {
-        Job job = findOr404(jobId);
-        requireAssignedProfessional(uid, job);
-        if (!"NEGOTIATING".equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                "Solo se puede rechazar una contratación pendiente de respuesta");
+                "El trabajo no admite propuestas de precio en su estado actual");
         }
-        job.setStatus("CANCELLED");
-        job.setCounterOfferSender(null);
-        Job saved = jobs.save(job);
-        notifications.notifyUser(job.getClientId(), "Contratación rechazada",
-            "El profesional rechazó la contratación directa para '" + job.getTitle() + "'.", jobId);
-        return JobDto.from(saved);
+        boolean isClient = uid.equals(job.getClientId());
+        boolean isAssignedPro = job.getProfessionalId() != null && uid.equals(job.getProfessionalId());
+        if (!isClient && !isAssignedPro) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "Solo el cliente o el profesional asignado pueden proponer precio");
+        }
+        if (amount == null || amount <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El precio debe ser mayor a 0");
+        }
+        String bidId = "bid_" + jobId + "_" + uid;
+        List<Bid> previous = bids.findAllByJobIdAndProfessionalId(jobId, uid);
+        Bid existing = previous.stream().filter(b -> b.getId().equals(bidId)).findFirst().orElse(null);
+        boolean isCounter = existing != null;
+        Bid bid = existing != null ? existing : new Bid();
+        bid.setId(bidId);
+        bid.setJobId(jobId);
+        bid.setProfessionalId(uid);
+        bid.setProfessionalName(findUserOr404(uid).getName());
+        bid.setAmount(amount);
+        bid.setDurationHours(1);
+        bid.setStatus(isCounter ? (isClient ? "COUNTERED_BY_CLIENT" : "COUNTERED_BY_PROFESSIONAL") : "PENDING");
+        Bid saved = bids.save(bid);
+        String who = isClient ? "El cliente" : "El profesional";
+        String target = isClient ? job.getProfessionalId() : job.getClientId();
+        chat.postSystemMessage(jobId, "Sistema",
+            who + " propuso un precio de $" + formatAmount(amount) + " COP.");
+        if (target != null && !target.isBlank()) {
+            notifications.notifyUser(target, "Nueva propuesta de precio",
+                who + " propuso $" + formatAmount(amount) + " COP para '" + job.getTitle() + "'.", jobId);
+        }
+        return BidDto.from(saved);
     }
 
     @Transactional

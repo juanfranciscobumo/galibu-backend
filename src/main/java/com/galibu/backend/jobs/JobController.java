@@ -1,8 +1,8 @@
 package com.galibu.backend.jobs;
 
-import com.galibu.backend.jobs.dto.CounterRequest;
 import com.galibu.backend.jobs.dto.CreateJobRequest;
 import com.galibu.backend.jobs.dto.JobDto;
+import com.galibu.backend.jobs.dto.PriceProposalRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -88,24 +88,12 @@ public class JobController {
         service.delete(auth.getName(), id);
     }
 
-    @PostMapping("/{id}/counter")
-    public JobDto counter(
-        Authentication auth, @PathVariable String id, @Valid @RequestBody CounterRequest request
+    @PostMapping("/{id}/propose-price")
+    public com.galibu.backend.bids.dto.BidDto proposePrice(
+        Authentication auth, @PathVariable String id, @Valid @RequestBody PriceProposalRequest request
     ) {
-        log.info("jobs counter userId={} jobId={}", auth.getName(), id);
-        return service.counter(auth.getName(), id, request);
-    }
-
-    @PostMapping("/{id}/accept-direct")
-    public JobDto acceptDirect(Authentication auth, @PathVariable String id) {
-        log.info("jobs acceptDirect userId={} jobId={}", auth.getName(), id);
-        return service.acceptDirect(auth.getName(), id);
-    }
-
-    @PostMapping("/{id}/reject-direct")
-    public JobDto rejectDirect(Authentication auth, @PathVariable String id) {
-        log.info("jobs rejectDirect userId={} jobId={}", auth.getName(), id);
-        return service.rejectDirect(auth.getName(), id);
+        log.info("jobs proposePrice userId={} jobId={} amount={}", auth.getName(), id, request.getAmount());
+        return service.proposePrice(auth.getName(), id, request.getAmount());
     }
 
     @PostMapping("/{id}/start")

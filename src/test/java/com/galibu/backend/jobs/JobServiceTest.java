@@ -4,15 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.galibu.backend.bids.Bid;
 import com.galibu.backend.bids.BidRepository;
+import com.galibu.backend.bids.dto.BidDto;
 import com.galibu.backend.ratings.RatingService;
 import com.galibu.backend.jobs.dto.CreateJobRequest;
-import com.galibu.backend.jobs.dto.CounterRequest;
 import com.galibu.backend.jobs.dto.JobDto;
 import com.galibu.backend.subscription.SubscriptionService;
 import com.galibu.backend.users.User;
@@ -169,124 +168,48 @@ class JobServiceTest {
     }
 
     @Test
-    void counterSetsSenderByRole() {
-        Job j = job("j1");
-        when(jobs.findById("j1")).thenReturn(Optional.of(j));
-        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
-
-        JobDto byClient = service.counter("client-1", "j1", new CounterRequest(40000.0));
-        assertEquals("NEGOTIATING", byClient.getStatus());
-        assertEquals("CLIENT", byClient.getCounterOfferSender());
-        assertEquals(40000.0, byClient.getCounterOfferAmount());
-
-        Job j2 = job("j2");
-        j2.setProfessionalId("pro-1");
-        when(jobs.findById("j2")).thenReturn(Optional.of(j2));
-        JobDto byPro = service.counter("pro-1", "j2", new CounterRequest(45000.0));
-        assertEquals("PROFESSIONAL", byPro.getCounterOfferSender());
-    }
-
-    @Test
-    void acceptDirectAssignsPriceWithPrecedenceAndGuards() {
-        // Caso 1: profesional asignado acepta con contraoferta
-        Job j1 = job("j1");
-        j1.setStatus("NEGOTIATING");
-        j1.setProfessionalId("pro-1");
-        j1.setCounterOfferAmount(42000.0);
-        j1.setProHourlyRate(50000.0);
-        when(jobs.findByIdForUpdate("j1")).thenReturn(Optional.of(j1));
-        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
-        doNothing().when(subscriptions).assertCanWork("pro-1");
-
-        JobDto accepted = service.acceptDirect("pro-1", "j1");
-        assertEquals("ACCEPTED", accepted.getStatus());
-        assertEquals(42000.0, accepted.getFinalPrice());
-
-        // Caso 2: otro usuario intenta aceptar -> FORBIDDEN (job sigue NEGOTIATING)
-        Job j2 = job("j2");
-        j2.setStatus("NEGOTIATING");
-        j2.setProfessionalId("pro-1");
-        j2.setCounterOfferAmount(42000.0);
-        when(jobs.findByIdForUpdate("j2")).thenReturn(Optional.of(j2));
-
-        ResponseStatusException forbidden = assertThrows(ResponseStatusException.class,
-            () -> service.acceptDirect("other", "j2"));
-        assertEquals(HttpStatus.FORBIDDEN, forbidden.getStatusCode());
-
-        // Caso 3: reintento del mismo profesional -> CONFLICT (job ya ACCEPTED)
-        Job j3 = job("j3");
-        j3.setStatus("ACCEPTED");
-        j3.setProfessionalId("pro-1");
-        when(jobs.findByIdForUpdate("j3")).thenReturn(Optional.of(j3));
-
-        ResponseStatusException conflict = assertThrows(ResponseStatusException.class,
-            () -> service.acceptDirect("pro-1", "j3"));
-        assertEquals(HttpStatus.CONFLICT, conflict.getStatusCode());
-    }
-
-    @Test
-    void acceptDirectUsesClientBudgetOverProRate() {
-        // Sin contraoferta: el presupuesto del cliente (budgetMin) manda sobre
-        // la tarifa de referencia del profesional.
-        Job withBudget = job("j1");
-        withBudget.setStatus("NEGOTIATING");
-        withBudget.setProfessionalId("pro-1");
-        withBudget.setBudgetMin(90000.0);
-        withBudget.setProHourlyRate(50000.0);
-        when(jobs.findByIdForUpdate("j1")).thenReturn(Optional.of(withBudget));
-        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
-        doNothing().when(subscriptions).assertCanWork("pro-1");
-
-        JobDto accepted = service.acceptDirect("pro-1", "j1");
-        assertEquals(90000.0, accepted.getFinalPrice());
-
-        // Sin presupuesto ("precio a convenir") la tarifa del profesional es
-        // solo el respaldo, nunca un valor inventado por la app.
-        Job noBudget = job("j2");
-        noBudget.setStatus("NEGOTIATING");
-        noBudget.setProfessionalId("pro-2");
-        noBudget.setBudgetMin(0.0);
-        noBudget.setProHourlyRate(60000.0);
-        when(jobs.findByIdForUpdate("j2")).thenReturn(Optional.of(noBudget));
-        doNothing().when(subscriptions).assertCanWork("pro-2");
-
-        JobDto fallback = service.acceptDirect("pro-2", "j2");
-        assertEquals(60000.0, fallback.getFinalPrice());
-
-        // Sin presupuesto ni tarifa: no se puede aceptar, hay que cotizar.
-        Job empty = job("j3");
-        empty.setStatus("NEGOTIATING");
-        empty.setProfessionalId("pro-3");
-        empty.setBudgetMin(0.0);
-        when(jobs.findByIdForUpdate("j3")).thenReturn(Optional.of(empty));
-        doNothing().when(subscriptions).assertCanWork("pro-3");
-
-        ResponseStatusException noPrice = assertThrows(ResponseStatusException.class,
-            () -> service.acceptDirect("pro-3", "j3"));
-        assertEquals(HttpStatus.BAD_REQUEST, noPrice.getStatusCode());
-    }
-
-    @Test
-    void acceptDirectAllowsClientOnlyOnProCounter() {
+    void proposePriceCreatesBidWhenNoneExists() {
         Job j = job("j1");
         j.setStatus("NEGOTIATING");
         j.setProfessionalId("pro-1");
-        j.setCounterOfferAmount(38000.0);
-        j.setCounterOfferSender("PROFESSIONAL");
-        when(jobs.findByIdForUpdate("j1")).thenReturn(Optional.of(j));
-        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+        when(jobs.findById("j1")).thenReturn(Optional.of(j));
+        when(users.findById("client-1")).thenReturn(Optional.of(client("client-1")));
+        when(bids.findAllByJobIdAndProfessionalId("j1", "client-1")).thenReturn(List.of());
+        when(bids.save(any(Bid.class))).thenAnswer(i -> {
+            Bid b = i.getArgument(0);
+            b.setId("bid_j1_client-1");
+            return b;
+        });
 
-        JobDto accepted = service.acceptDirect("client-1", "j1");
-        assertEquals("ACCEPTED", accepted.getStatus());
-        assertEquals(38000.0, accepted.getFinalPrice());
+        BidDto proposed = service.proposePrice("client-1", "j1", 90000.0);
+
+        assertEquals("bid_j1_client-1", proposed.getId());
+        assertEquals("j1", proposed.getJobId());
+        assertEquals(90000.0, proposed.getAmount(), 0.01);
+        assertEquals("PENDING", proposed.getStatus());
+        verify(chat).postSystemMessage(eq("j1"), eq("Sistema"),
+            org.mockito.ArgumentMatchers.contains("90000"));
+    }
+
+    @Test
+    void proposePriceGuardsNonParticipantAndClosedJob() {
+        Job j = job("j1");
+        j.setStatus("ACCEPTED");
+        j.setProfessionalId("pro-1");
+        when(jobs.findById("j1")).thenReturn(Optional.of(j));
+
+        ResponseStatusException closed = assertThrows(ResponseStatusException.class,
+            () -> service.proposePrice("client-1", "j1", 90000.0));
+        assertEquals(HttpStatus.CONFLICT, closed.getStatusCode());
 
         Job j2 = job("j2");
         j2.setStatus("NEGOTIATING");
-        j2.setProfessionalId("pro-1");
-        when(jobs.findByIdForUpdate("j2")).thenReturn(Optional.of(j2));
+        j2.setClientId("client-9");
+        j2.setProfessionalId("pro-9");
+        when(jobs.findById("j2")).thenReturn(Optional.of(j2));
 
         ResponseStatusException forbidden = assertThrows(ResponseStatusException.class,
-            () -> service.acceptDirect("client-1", "j2"));
+            () -> service.proposePrice("client-1", "j2", 90000.0));
         assertEquals(HttpStatus.FORBIDDEN, forbidden.getStatusCode());
     }
 
@@ -511,26 +434,5 @@ class JobServiceTest {
         ResponseStatusException blocked2 = assertThrows(ResponseStatusException.class,
             () -> service.delete("client-1", "j1"));
         assertEquals(HttpStatus.CONFLICT, blocked2.getStatusCode());
-    }
-
-    @Test
-    void rejectDirectOnlyAllowsNegotiating() {
-        Job j = job("j1");
-        j.setStatus("NEGOTIATING");
-        j.setProfessionalId("pro-1");
-        when(jobs.findById("j1")).thenReturn(Optional.of(j));
-        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
-
-        JobDto rejected = service.rejectDirect("pro-1", "j1");
-        assertEquals("CANCELLED", rejected.getStatus());
-
-        Job j2 = job("j2");
-        j2.setStatus("ACCEPTED");
-        j2.setProfessionalId("pro-1");
-        when(jobs.findById("j2")).thenReturn(Optional.of(j2));
-
-        ResponseStatusException blocked = assertThrows(ResponseStatusException.class,
-            () -> service.rejectDirect("pro-1", "j2"));
-        assertEquals(HttpStatus.CONFLICT, blocked.getStatusCode());
     }
 }
