@@ -1,6 +1,7 @@
 package com.galibu.backend.bids;
 
 import com.galibu.backend.bids.dto.BidDto;
+import com.galibu.backend.bids.dto.BidEventDto;
 import com.galibu.backend.bids.dto.CreateBidRequest;
 import com.galibu.backend.chat.ChatService;
 import com.galibu.backend.jobs.Job;
@@ -11,6 +12,7 @@ import com.galibu.backend.subscription.SubscriptionService;
 import com.galibu.backend.users.User;
 import com.galibu.backend.users.UserRepository;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,15 +22,18 @@ import org.springframework.web.server.ResponseStatusException;
 public class BidService {
 
     private final BidRepository bids;
+    private final BidEventRepository events;
     private final JobRepository jobs;
     private final UserRepository users;
     private final SubscriptionService subscriptions;
     private final ChatService chat;
     private final NotificationService notifications;
 
-    public BidService(BidRepository bids, JobRepository jobs, UserRepository users,
-            SubscriptionService subscriptions, ChatService chat, NotificationService notifications) {
+    public BidService(BidRepository bids, BidEventRepository events, JobRepository jobs,
+            UserRepository users, SubscriptionService subscriptions, ChatService chat,
+            NotificationService notifications) {
         this.bids = bids;
+        this.events = events;
         this.jobs = jobs;
         this.users = users;
         this.subscriptions = subscriptions;
@@ -49,6 +54,22 @@ public class BidService {
     @Transactional(readOnly = true)
     public List<BidDto> mine(String uid) {
         return toDto(bids.findByProfessionalId(uid));
+    }
+
+    /** Historial de rondas de una oferta. Solo cliente del job u oferente. */
+    @Transactional(readOnly = true)
+    public List<BidEventDto> history(String uid, String bidId) {
+        Bid bid = findBidOr404(bidId);
+        Job job = findJobOr404(bid.getJobId());
+        boolean isClient = uid.equals(job.getClientId());
+        boolean isOwner = uid.equals(bid.getProfessionalId());
+        if (!isClient && !isOwner) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "No participas en esta oferta");
+        }
+        return events.findByBidIdOrderByCreatedAtAsc(bidId).stream()
+            .map(BidEventDto::from)
+            .toList();
     }
 
     @Transactional
@@ -109,6 +130,13 @@ public class BidService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                 "El costo de los materiales no puede ser negativo");
         }
+        Long visitScheduledAt = req.getVisitScheduledAt() != null
+            ? req.getVisitScheduledAt()
+            : existing != null ? existing.getVisitScheduledAt() : null;
+        if (visitScheduledAt != null && visitScheduledAt <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "La fecha de la visita no es válida");
+        }
         bid.setId(bidId);
         bid.setJobId(jobId);
         bid.setProfessionalId(uid);
@@ -122,6 +150,7 @@ public class BidService {
         bid.setVisitFee(visitRequired ? visitFee : null);
         bid.setMaterialsIncluded(materialsIncluded);
         bid.setMaterialsCost(materialsIncluded ? materialsCost : null);
+        bid.setVisitScheduledAt(visitRequired ? visitScheduledAt : null);
         bid.setCounterRound(isCounter ? bid.getCounterRound() + 1 : 0);
         if (req.getComment() != null && !req.getComment().isBlank()) {
             bid.setComment(req.getComment());
@@ -139,15 +168,20 @@ public class BidService {
         }
         bid.setLastCounterOfferAmount(lastCounter);
         Bid saved = bids.save(bid);
+        record(saved, uid, "PROFESSIONAL", isCounter ? "COUNTER" : "OFFER", saved.getComment());
         if ("OPEN".equals(job.getStatus())) {
             job.setStatus("NEGOTIATING");
             job.setCounterOfferAmount(req.getAmount());
             job.setCounterOfferSender("PROFESSIONAL");
             jobs.save(job);
         }
-        notifications.notifyUser(job.getClientId(), "Nueva oferta recibida",
-            user.getName() + " envió una oferta de $" + req.getAmount()
-                + " COP para '" + job.getTitle() + "'.", jobId);
+        String title = isCounter
+            ? "Contraoferta · Ronda " + saved.getCounterRound()
+            : "Nueva cotización recibida";
+        String visitText = saved.isVisitRequired() ? " Incluye visita técnica." : "";
+        notifications.notifyUser(job.getClientId(), title,
+            user.getName() + " propuso $" + formatAmount(saved.getAmount())
+                + " COP para '" + job.getTitle() + "'." + visitText, jobId);
         return BidDto.from(saved);
     }
 
@@ -172,10 +206,12 @@ public class BidService {
         bid.setStatus(isClient ? "COUNTERED_BY_CLIENT" : "COUNTERED_BY_PROFESSIONAL");
         bid.setCounterRound(bid.getCounterRound() + 1);
         Bid saved = bids.save(bid);
+        record(saved, uid, isClient ? "CLIENT" : "PROFESSIONAL", "COUNTER", null);
         String who = isClient ? "El cliente" : "El profesional";
         notifications.notifyUser(isClient ? bid.getProfessionalId() : job.getClientId(),
-            "Nueva contraoferta",
-            who + " propuso una nueva tarifa para '" + job.getTitle() + "'.", job.getId());
+            "Contraoferta · Ronda " + saved.getCounterRound(),
+            who + " propuso $" + formatAmount(saved.getAmount())
+                + " COP para '" + job.getTitle() + "'.", job.getId());
         return BidDto.from(saved);
     }
 
@@ -188,6 +224,7 @@ public class BidService {
         }
         bid.setStatus("REJECTED");
         Bid saved = bids.save(bid);
+        record(saved, uid, "CLIENT", "REJECT", "Oferta rechazada por el cliente");
         notifications.notifyUser(bid.getProfessionalId(), "Oferta rechazada",
             "Tu oferta para '" + job.getTitle() + "' fue rechazada.", job.getId());
         return BidDto.from(saved);
@@ -228,10 +265,14 @@ public class BidService {
         }
         bid.setStatus("ACCEPTED");
         Bid saved = bids.save(bid);
+        record(saved, uid, isClient ? "CLIENT" : "PROFESSIONAL", "ACCEPT",
+            "Precio final pactado");
         for (Bid other : bids.findByJobIdOrderByCreatedAtDesc(job.getId())) {
             if (!other.getId().equals(bid.getId()) && !"REJECTED".equals(other.getStatus())) {
                 other.setStatus("REJECTED");
                 bids.save(other);
+                record(other, uid, isClient ? "CLIENT" : "PROFESSIONAL", "REJECT",
+                    "Rechazada automáticamente al aceptar otra oferta");
             }
         }
         job.setStatus("ACCEPTED");
@@ -240,13 +281,29 @@ public class BidService {
         job.setFinalPrice(bid.getAmount());
         jobs.save(job);
         chat.postSystemMessage(job.getId(), "Sistema",
-            "¡Presupuesto pactado en $" + bid.getAmount()
+            "¡Presupuesto pactado en $" + formatAmount(bid.getAmount())
                 + " COP! Chat seguro iniciado. Coordinen los detalles aquí.");
         notifications.notifyUser(bid.getProfessionalId(), "Oferta aceptada",
-            "El cliente aceptó tu oferta de $" + bid.getAmount() + " COP para '" + job.getTitle() + "'.", job.getId());
+            "El cliente aceptó tu oferta de $" + formatAmount(bid.getAmount())
+                + " COP para '" + job.getTitle() + "'.", job.getId());
         notifications.notifyUser(job.getClientId(), "Oferta aceptada",
             "Has aceptado la oferta de " + bid.getProfessionalName() + " para '" + job.getTitle() + "'.", job.getId());
         return BidDto.from(saved);
+    }
+
+    /** Guarda un movimiento del historial de la oferta. */
+    private void record(Bid bid, String authorId, String authorRole, String action, String note) {
+        BidEvent event = new BidEvent();
+        event.setId("evt_" + UUID.randomUUID());
+        event.setBidId(bid.getId());
+        event.setJobId(bid.getJobId());
+        event.setAuthorId(authorId);
+        event.setAuthorRole(authorRole);
+        event.setAction(action);
+        event.setAmount(bid.getAmount());
+        event.setRound(bid.getCounterRound());
+        event.setNote(note == null || note.isBlank() ? null : note);
+        events.save(event);
     }
 
     /** Normaliza el tipo de cotizacion a uno de los valores soportados. */
@@ -260,6 +317,11 @@ public class BidService {
             case "FIXED", "CLOSED", "CERRADA" -> "FIXED";
             default -> "ESTIMATED";
         };
+    }
+
+    private String formatAmount(double amount) {
+        return java.text.NumberFormat.getNumberInstance(java.util.Locale.US)
+            .format(amount);
     }
 
     private Bid findBidOr404(String bidId) {

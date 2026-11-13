@@ -29,6 +29,7 @@ public class BidDto {
     public Double visitFee;
     public boolean materialsIncluded;
     public Double materialsCost;
+    public Long visitScheduledAt;
     public int counterRound;
     public long createdAt;
 
@@ -51,6 +52,7 @@ public class BidDto {
         dto.setVisitFee(bid.getVisitFee());
         dto.setMaterialsIncluded(bid.isMaterialsIncluded());
         dto.setMaterialsCost(bid.getMaterialsCost());
+        dto.setVisitScheduledAt(bid.getVisitScheduledAt());
         dto.setCounterRound(bid.getCounterRound());
         dto.setCreatedAt(bid.getCreatedAt());
         return dto;

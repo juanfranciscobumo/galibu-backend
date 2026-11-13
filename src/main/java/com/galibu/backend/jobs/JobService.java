@@ -2,6 +2,8 @@ package com.galibu.backend.jobs;
 
 import com.galibu.backend.common.TextUtils;
 import com.galibu.backend.bids.Bid;
+import com.galibu.backend.bids.BidEvent;
+import com.galibu.backend.bids.BidEventRepository;
 import com.galibu.backend.bids.BidRepository;
 import com.galibu.backend.chat.ChatService;
 import com.galibu.backend.jobs.dto.CreateJobRequest;
@@ -27,18 +29,21 @@ public class JobService {
     private final JobRepository jobs;
     private final UserRepository users;
     private final BidRepository bids;
+    private final BidEventRepository bidEvents;
     private final com.galibu.backend.ratings.RatingService ratingService;
     private final SubscriptionService subscriptions;
     private final ChatService chat;
     private final NotificationService notifications;
 
     public JobService(JobRepository jobs, UserRepository users, BidRepository bids,
+            BidEventRepository bidEvents,
             com.galibu.backend.ratings.RatingService ratingService,
             SubscriptionService subscriptions, ChatService chat,
             NotificationService notifications) {
         this.jobs = jobs;
         this.users = users;
         this.bids = bids;
+        this.bidEvents = bidEvents;
         this.ratingService = ratingService;
         this.subscriptions = subscriptions;
         this.chat = chat;
@@ -219,8 +224,12 @@ public class JobService {
 
     /**
      * Propone (o actualiza) un precio para un trabajo desde el chat.
-     * Crea una oferta del usuario si no existe, o contraoferta la vigente.
-     * Usado por la tarjeta "Acordar precio" del chat.
+     *
+     * El precio siempre vive en la oferta del profesional asignado:
+     * - Si propone el profesional, actualiza su propia oferta.
+     * - Si propone el cliente, actualiza la oferta del profesional y la deja
+     *   como COUNTERED_BY_CLIENT para que el profesional pueda aceptarla.
+     * Así ambos ven la misma negociación y no se crean ofertas paralelas.
      */
     @Transactional
     public BidDto proposePrice(String uid, String jobId, Double amount) {
@@ -238,24 +247,56 @@ public class JobService {
         if (amount == null || amount <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El precio debe ser mayor a 0");
         }
-        String bidId = "bid_" + jobId + "_" + uid;
-        List<Bid> previous = bids.findAllByJobIdAndProfessionalId(jobId, uid);
+        String bidOwnerId = uid;
+        if (isClient) {
+            String professionalId = job.getProfessionalId();
+            if (professionalId == null || professionalId.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Elige una oferta de un profesional para negociar el precio");
+            }
+            bidOwnerId = professionalId;
+        }
+        String bidId = "bid_" + jobId + "_" + bidOwnerId;
+        List<Bid> previous = bids.findAllByJobIdAndProfessionalId(jobId, bidOwnerId);
         Bid existing = previous.stream().filter(b -> b.getId().equals(bidId)).findFirst().orElse(null);
+        if (existing != null && ("ACCEPTED".equals(existing.getStatus())
+                || "REJECTED".equals(existing.getStatus()))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La oferta ya fue decidida");
+        }
         boolean isCounter = existing != null;
         Bid bid = existing != null ? existing : new Bid();
+        User bidOwner = findUserOr404(bidOwnerId);
         bid.setId(bidId);
         bid.setJobId(jobId);
-        bid.setProfessionalId(uid);
-        bid.setProfessionalName(findUserOr404(uid).getName());
+        bid.setProfessionalId(bidOwnerId);
+        bid.setProfessionalName(bidOwner.getName());
+        bid.setProfessionalRating(bidOwner.getRating());
+        bid.setProfessionalPhoto(bidOwner.getProfilePhotoUrl());
         bid.setAmount(amount);
         bid.setDurationHours(1);
-        bid.setStatus(isCounter ? (isClient ? "COUNTERED_BY_CLIENT" : "COUNTERED_BY_PROFESSIONAL") : "PENDING");
+        bid.setStatus(isClient
+            ? "COUNTERED_BY_CLIENT"
+            : (isCounter ? "COUNTERED_BY_PROFESSIONAL" : "PENDING"));
         if (bid.getQuoteType() == null || bid.getQuoteType().isBlank()) {
             bid.setQuoteType("ESTIMATED");
         }
         // Cada propuesta sobre una oferta ya existente abre una nueva ronda.
         bid.setCounterRound(isCounter ? bid.getCounterRound() + 1 : 0);
         Bid saved = bids.save(bid);
+        BidEvent event = new BidEvent();
+        event.setId("evt_" + UUID.randomUUID());
+        event.setBidId(saved.getId());
+        event.setJobId(saved.getJobId());
+        event.setAuthorId(uid);
+        event.setAuthorRole(isClient ? "CLIENT" : "PROFESSIONAL");
+        event.setAction(isCounter ? "COUNTER" : "OFFER");
+        event.setAmount(saved.getAmount());
+        event.setRound(saved.getCounterRound());
+        bidEvents.save(event);
+        // Mantiene los campos de negociación del job alineados para las tarjetas.
+        job.setCounterOfferAmount(amount);
+        job.setCounterOfferSender(isClient ? "CLIENT" : "PROFESSIONAL");
+        jobs.save(job);
         String who = isClient ? "El cliente" : "El profesional";
         String roundText = saved.getCounterRound() > 0
             ? " (ronda " + saved.getCounterRound() + ")" : "";
@@ -263,7 +304,10 @@ public class JobService {
         chat.postSystemMessage(jobId, "Sistema",
             who + " propuso un precio de $" + formatAmount(amount) + " COP" + roundText + ".");
         if (target != null && !target.isBlank()) {
-            notifications.notifyUser(target, "Nueva propuesta de precio",
+            String title = saved.getCounterRound() > 0
+                ? "Contraoferta · Ronda " + saved.getCounterRound()
+                : (isClient ? "El cliente propone un precio" : "Nueva propuesta de precio");
+            notifications.notifyUser(target, title,
                 who + " propuso $" + formatAmount(amount) + " COP para '" + job.getTitle() + "'.", jobId);
         }
         return BidDto.from(saved);

@@ -35,4 +35,7 @@ public class CreateBidRequest {
 
     /** Costo estimado de materiales (opcional, informativo). */
     public Double materialsCost;
+
+    /** Fecha/hora propuesta para la visita tecnica (epoch millis, opcional). */
+    public Long visitScheduledAt;
 }

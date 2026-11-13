@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.galibu.backend.bids.dto.BidDto;
+import com.galibu.backend.bids.dto.BidEventDto;
 import com.galibu.backend.bids.dto.CreateBidRequest;
 import com.galibu.backend.jobs.Job;
 import com.galibu.backend.jobs.JobRepository;
@@ -32,6 +33,9 @@ class BidServiceTest {
 
     @Mock
     private BidRepository bids;
+
+    @Mock
+    private BidEventRepository bidEvents;
 
     @Mock
     private JobRepository jobs;
@@ -221,6 +225,38 @@ class BidServiceTest {
         assertTrue(created.isMaterialsIncluded());
         assertEquals(35000.0, created.getMaterialsCost());
         assertEquals(0, created.getCounterRound());
+        verify(bidEvents).save(any(BidEvent.class));
+    }
+
+    @Test
+    void historyReturnsRoundsForClientAndOwnerOnly() {
+        Bid bid = bid("bid-1", "COUNTERED_BY_CLIENT");
+        bid.setCounterRound(2);
+        when(bids.findById("bid-1")).thenReturn(Optional.of(bid));
+        when(jobs.findById("job-1")).thenReturn(Optional.of(job("job-1")));
+        BidEvent event = new BidEvent();
+        event.setId("evt-1");
+        event.setBidId("bid-1");
+        event.setJobId("job-1");
+        event.setAuthorId("client-1");
+        event.setAuthorRole("CLIENT");
+        event.setAction("COUNTER");
+        event.setAmount(12000.0);
+        event.setRound(2);
+        when(bidEvents.findByBidIdOrderByCreatedAtAsc("bid-1")).thenReturn(List.of(event));
+
+        List<BidEventDto> history = service.history("client-1", "bid-1");
+        assertEquals(1, history.size());
+        assertEquals("COUNTER", history.get(0).getAction());
+        assertEquals(2, history.get(0).getRound());
+        assertEquals(12000.0, history.get(0).getAmount());
+
+        // El profesional dueño de la oferta también puede verla.
+        assertEquals(1, service.history("pro-1", "bid-1").size());
+
+        ResponseStatusException forbidden = assertThrows(ResponseStatusException.class,
+            () -> service.history("stranger", "bid-1"));
+        assertEquals(HttpStatus.FORBIDDEN, forbidden.getStatusCode());
     }
 
     @Test

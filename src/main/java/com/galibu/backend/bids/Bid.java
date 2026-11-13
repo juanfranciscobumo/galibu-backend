@@ -71,6 +71,10 @@ public class Bid {
     @Column(name = "materials_cost")
     private Double materialsCost;
 
+    /** Fecha/hora propuesta para la visita tecnica (epoch millis), opcional. */
+    @Column(name = "visit_scheduled_at")
+    private Long visitScheduledAt;
+
     /** Ronda de negociacion: 0 en la primera oferta, +1 por cada contraoferta. */
     @Column(name = "counter_round", nullable = false)
     private int counterRound = 0;

@@ -1,6 +1,7 @@
 package com.galibu.backend.bids;
 
 import com.galibu.backend.bids.dto.BidDto;
+import com.galibu.backend.bids.dto.BidEventDto;
 import com.galibu.backend.bids.dto.CreateBidRequest;
 import com.galibu.backend.jobs.dto.CounterRequest;
 import jakarta.validation.Valid;
@@ -39,6 +40,12 @@ public class BidController {
     public List<BidDto> mine(Authentication auth) {
         log.debug("bids mine userId={}", auth.getName());
         return service.mine(auth.getName());
+    }
+
+    @GetMapping("/bids/{bidId}/history")
+    public List<BidEventDto> history(Authentication auth, @PathVariable String bidId) {
+        log.debug("bids history userId={} bidId={}", auth.getName(), bidId);
+        return service.history(auth.getName(), bidId);
     }
 
     @PostMapping("/jobs/{jobId}/bids")
