@@ -102,4 +102,32 @@ class RequestMetricsTest {
         assertEquals(0L, totals.get("errors"));
         assertEquals(0.0, (double) totals.get("avgMs"), 0.001);
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void keepsExternalScanTrafficOutOfApiMetrics() {
+        RequestMetrics metrics = new RequestMetrics();
+        metrics.record("GET", "/api/jobs", 200, 10, "10.0.0.1");
+        metrics.record("GET", "/", 401, 1, "45.198.224.125");
+        metrics.recordExternal("GET", "/", 204, "45.198.224.125");
+        metrics.recordExternal("GET", "/wp-login.php", 404, "172.233.20.229");
+
+        Map<String, Object> snapshot = metrics.snapshot();
+        Map<String, Object> totals = (Map<String, Object>) snapshot.get("totals");
+        assertEquals(1L, totals.get("requests"));
+        assertEquals(0L, totals.get("errors"));
+
+        Map<String, Object> external = (Map<String, Object>) snapshot.get("external");
+        assertEquals(2L, external.get("total"));
+        List<Map<String, Object>> paths = (List<Map<String, Object>>) external.get("paths");
+        assertEquals("GET /", paths.get(0).get("name"));
+        assertEquals(1L, paths.get(0).get("count"));
+        List<Map<String, Object>> clients = (List<Map<String, Object>>) external.get("clients");
+        assertEquals(2, clients.size());
+        assertEquals(2, ((List<?>) external.get("recent")).size());
+
+        metrics.reset();
+        Map<String, Object> afterReset = (Map<String, Object>) metrics.snapshot().get("external");
+        assertEquals(0L, afterReset.get("total"));
+    }
 }

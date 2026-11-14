@@ -105,29 +105,35 @@ public class RequestMetricsFilter extends OncePerRequestFilter {
             String path = request.getRequestURI();
             String client = clientIp(request);
 
-            metrics.record(request.getMethod(), path, status, durationMs, client, detail);
-            usage.record(status, durationMs);
+            if (RequestMetrics.isApiPath(path)) {
+                metrics.record(request.getMethod(), path, status, durationMs, client, detail);
+                usage.record(status, durationMs);
 
-            byte[] requestBody = requestBody(wrappedRequest);
-            traceStore.record(new RequestTraceStore.CallData(
-                requestId,
-                System.currentTimeMillis(),
-                request.getMethod(),
-                path,
-                status,
-                durationMs,
-                client,
-                userId,
-                clientApp,
-                clientPlatform,
-                clientVersion,
-                clientDevice,
-                userAgent,
-                request.getContentType(),
-                wrappedResponse.getContentType(),
-                requestBody,
-                responseBody
-            ));
+                byte[] requestBody = requestBody(wrappedRequest);
+                traceStore.record(new RequestTraceStore.CallData(
+                    requestId,
+                    System.currentTimeMillis(),
+                    request.getMethod(),
+                    path,
+                    status,
+                    durationMs,
+                    client,
+                    userId,
+                    clientApp,
+                    clientPlatform,
+                    clientVersion,
+                    clientDevice,
+                    userAgent,
+                    request.getContentType(),
+                    wrappedResponse.getContentType(),
+                    requestBody,
+                    responseBody
+                ));
+            } else {
+                // Escaneos y rutas que no son de la API: se contabilizan aparte
+                // para no ensuciar la tasa de error ni las trazas de negocio.
+                metrics.recordExternal(request.getMethod(), path, status, client);
+            }
 
             wrappedResponse.copyBodyToResponse();
             MDC.remove("requestId");

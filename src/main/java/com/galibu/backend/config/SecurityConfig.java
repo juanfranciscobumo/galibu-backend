@@ -87,7 +87,7 @@ public class SecurityConfig {
             }))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**", "/api/geo/**", "/api/front-logs",
-                    "/api/wallet/bold/webhook", "/actuator/health", "/error")
+                    "/api/wallet/bold/webhook", "/actuator/health", "/", "/error")
                 .permitAll()
                 .anyRequest().authenticated())
             .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)

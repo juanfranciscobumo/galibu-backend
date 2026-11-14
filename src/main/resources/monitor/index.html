@@ -134,6 +134,8 @@
   .chip.active { background: rgba(47,123,255,.18); border-color: rgba(47,123,255,.5); color: #BFD7FF; }
   .bars { display: grid; gap: 10px; }
   .bar-row { display: grid; grid-template-columns: 92px 1fr 130px; align-items: center; gap: 10px; font-size: 11.5px; color: var(--muted); }
+  .bar-row.wide { grid-template-columns: minmax(120px, 240px) 1fr 56px; }
+  .bar-row.wide > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); font-size: 10.5px; }
   .bar-row b { color: #CBD8EA; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
   .bar { height: 8px; border-radius: 999px; background: #0A1322; border: 1px solid var(--border); overflow: hidden; }
   .bar i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--blue), var(--blue-2)); transition: width .35s ease; }
@@ -489,6 +491,31 @@
       <footer class="muted tiny" style="margin-top:8px">Últimos 600 eventos en memoria · también en <code>logs/galibu-backend.log</code></footer>
     </article>
   </section>
+
+  <section class="grid">
+    <article class="card">
+      <header>
+        <h2>Tráfico externo · escaneos</h2>
+        <span class="muted tiny" id="externalSummary">—</span>
+      </header>
+      <div class="grid cols-2" style="margin:0">
+        <div>
+          <div class="body-label">Rutas más pedidas</div>
+          <div class="bars" id="externalPaths"><div class="empty">Sin peticiones externas.</div></div>
+        </div>
+        <div>
+          <div class="body-label">IPs más activas</div>
+          <div class="chips" id="externalClients"></div>
+          <div class="body-label" style="margin-top:12px">Últimas peticiones no-API</div>
+          <div class="chips" id="externalRecent"></div>
+        </div>
+      </div>
+      <footer class="muted tiny" style="margin-top:10px">
+        Peticiones que no van a <code>/api/**</code> (bots, escaneos, rutas inexistentes). Se excluyen de la tasa de error,
+        de la latencia y de las trazas para no distorsionar las métricas reales del producto.
+      </footer>
+    </article>
+  </section>
   </div><!-- /panel-overview -->
 
   <div id="panel-traces" class="tab-panel">
@@ -554,7 +581,7 @@
     </p>
   </div>
 
-  <p class="foot">Galibu v1.0.0 · monitor interno · el tráfico del propio dashboard no se contabiliza</p>
+  <p class="foot">Galibu v1.0.0 · monitor interno · solo se contabiliza el tráfico de <code>/api/**</code>; el dashboard y los escaneos externos se excluyen</p>
 </main>
 
 <script>
@@ -1007,8 +1034,46 @@
     }).join('');
   }
 
-  function renderErrors(data) {
-    var all = data.metrics.errors || [];
+  function renderExternal(data) {
+    var ext = (data.metrics && data.metrics.external) || {};
+    var total = ext.total || 0;
+    var paths = ext.paths || [];
+    var clients = ext.clients || [];
+    var recent = ext.recent || [];
+
+    $('externalSummary').textContent = total
+      ? fmtNum(total) + ' peticiones no-API · ' + fmtNum(clients.length) + ' IPs'
+      : 'sin ruido externo';
+
+    if (!paths.length) {
+      $('externalPaths').innerHTML = '<div class="empty">Sin peticiones externas.</div>';
+    } else {
+      var max = paths[0].count || 1;
+      $('externalPaths').innerHTML = paths.map(function (p) {
+        return '<div class="bar-row wide">' +
+          '<span title="' + esc(p.name) + '">' + esc(p.name) + '</span>' +
+          '<div class="bar"><i class="cyan" style="width:' + Math.max(2, p.count * 100 / max).toFixed(1) + '%"></i></div>' +
+          '<b>' + fmtNum(p.count) + '</b></div>';
+      }).join('');
+    }
+
+    $('externalClients').innerHTML = clients.length
+      ? clients.map(function (c) {
+          return '<span class="chip mono">' + esc(c.name) + ' <b>' + fmtNum(c.count) + '</b></span>';
+        }).join('')
+      : '<span class="empty">—</span>';
+
+    $('externalRecent').innerHTML = recent.length
+      ? recent.slice(0, 10).map(function (r) {
+          return '<span class="chip" title="' + esc(r.client || '') + '">' +
+            '<span class="muted">' + fmtClock(r.at) + '</span> ' +
+            esc(r.method) + ' ' + esc(r.path) +
+            ' <b class="' + (r.status >= 400 ? 's-5' : '') + '">' + esc(r.status) + '</b></span>';
+        }).join('')
+      : '<span class="empty">—</span>';
+  }
+
+  function renderErrors(data) {    var all = data.metrics.errors || [];
     var list = all.filter(function (e) {
       return state.errorFilter === 'ALL' || String(e.status).charAt(0) === state.errorFilter;
     });
@@ -1476,6 +1541,7 @@
     renderEndpoints(data);
     renderRecent(data);
     renderErrors(data);
+    renderExternal(data);
     renderJvm(data.jvm || {});
     renderDb(data.db || {});
     renderLogSummary(data.logs);

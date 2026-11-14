@@ -29,6 +29,8 @@ public class RequestMetrics {
     private static final int ERRORS_MAX = 150;
     private static final int SAMPLES_MAX = 400;
     private static final int DETAIL_MAX = 700;
+    private static final int EXTERNAL_MAX = 200;
+    private static final int EXTERNAL_TOP = 8;
 
     private static final Pattern NUMERIC = Pattern.compile("\\d+");
     private static final Pattern UUID = Pattern.compile(
@@ -47,6 +49,12 @@ public class RequestMetrics {
     private final ArrayDeque<RecentRequest> recent = new ArrayDeque<>();
     private final ArrayDeque<ErrorEntry> errors = new ArrayDeque<>();
     private final SlidingSamples globalSamples = new SlidingSamples(SAMPLES_MAX);
+
+    /** Tráfico que no es de la API (escaneos, rutas inexistentes, bots). */
+    private final AtomicLong externalTotal = new AtomicLong();
+    private final Map<String, AtomicLong> externalPaths = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> externalClients = new ConcurrentHashMap<>();
+    private final ArrayDeque<ExternalRequest> externalRecent = new ArrayDeque<>();
 
     private final Bucket[] seconds = createBuckets(SECONDS_WINDOW);
     private final Bucket[] minutes = createBuckets(MINUTES_WINDOW);
@@ -73,6 +81,9 @@ public class RequestMetrics {
         String detail
     ) {
         if (path == null || path.isBlank()) {
+            return;
+        }
+        if (!isApiPath(path)) {
             return;
         }
         if (path.startsWith("/api/monitor")
@@ -133,6 +144,36 @@ public class RequestMetrics {
         }
     }
 
+    /**
+     * Tráfico que no entra en las métricas de la API: escaneos de internet,
+     * rutas inexistentes y bots. Se guarda aparte para que no distorsione la
+     * tasa de error ni la latencia real del producto.
+     */
+    public void recordExternal(String method, String path, int status, String client) {
+        if (path == null || path.isBlank()) {
+            return;
+        }
+        String normalized = normalize(path);
+        long now = System.currentTimeMillis();
+        externalTotal.incrementAndGet();
+        externalPaths.computeIfAbsent(method + " " + normalized, key -> new AtomicLong())
+            .incrementAndGet();
+        if (client != null && !client.isBlank()) {
+            externalClients.computeIfAbsent(client, key -> new AtomicLong()).incrementAndGet();
+        }
+        synchronized (externalRecent) {
+            externalRecent.addFirst(new ExternalRequest(now, method, normalized, status, client));
+            while (externalRecent.size() > EXTERNAL_MAX) {
+                externalRecent.removeLast();
+            }
+        }
+    }
+
+    /** Rutas que pertenecen a la API de negocio. */
+    public static boolean isApiPath(String path) {
+        return path != null && (path.equals("/api") || path.startsWith("/api/"));
+    }
+
     public Map<String, Object> snapshot() {
         long now = System.currentTimeMillis();
         long requests = totalRequests.get();
@@ -189,6 +230,43 @@ public class RequestMetrics {
             }
         }
         out.put("errors", errorList);
+        out.put("external", externalSnapshot());
+        return out;
+    }
+
+    private Map<String, Object> externalSnapshot() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("total", externalTotal.get());
+        out.put("paths", topCounts(externalPaths, EXTERNAL_TOP));
+        out.put("clients", topCounts(externalClients, EXTERNAL_TOP));
+        List<Map<String, Object>> recents = new ArrayList<>();
+        synchronized (externalRecent) {
+            int limit = Math.min(20, externalRecent.size());
+            int index = 0;
+            for (ExternalRequest request : externalRecent) {
+                if (index++ >= limit) {
+                    break;
+                }
+                recents.add(request.toMap());
+            }
+        }
+        out.put("recent", recents);
+        return out;
+    }
+
+    private static List<Map<String, Object>> topCounts(Map<String, AtomicLong> source, int limit) {
+        List<Map.Entry<String, AtomicLong>> ordered = new ArrayList<>(source.entrySet());
+        ordered.sort(Comparator
+            .comparingLong((Map.Entry<String, AtomicLong> entry) -> entry.getValue().get())
+            .reversed()
+            .thenComparing(Map.Entry::getKey));
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (int i = 0; i < ordered.size() && i < limit; i++) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("name", ordered.get(i).getKey());
+            item.put("count", ordered.get(i).getValue().get());
+            out.add(item);
+        }
         return out;
     }
 
@@ -213,6 +291,12 @@ public class RequestMetrics {
             for (Bucket bucket : minutes) {
                 bucket.reset(-1);
             }
+        }
+        externalTotal.set(0);
+        externalPaths.clear();
+        externalClients.clear();
+        synchronized (externalRecent) {
+            externalRecent.clear();
         }
         startedAt = System.currentTimeMillis();
     }
@@ -300,6 +384,18 @@ public class RequestMetrics {
             map.put("path", path);
             map.put("status", status);
             map.put("ms", ms);
+            map.put("client", client);
+            return map;
+        }
+    }
+
+    private record ExternalRequest(long at, String method, String path, int status, String client) {
+        Map<String, Object> toMap() {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("at", at);
+            map.put("method", method);
+            map.put("path", path);
+            map.put("status", status);
             map.put("client", client);
             return map;
         }
