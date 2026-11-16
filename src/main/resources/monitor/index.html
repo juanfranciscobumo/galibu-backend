@@ -309,6 +309,20 @@
   .stats-table td:first-child { color: var(--muted); }
   .trace-meta .err { color: #FCA5A5; }
   .stat-note { color: var(--muted-2); font-size: 10.5px; margin: 8px 0 0; }
+
+  /* Perfil 360 */
+  .profile-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .profile-avatar {
+    width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center;
+    background: linear-gradient(135deg, #1D4ED8, #0891B2); color: #F8FAFC;
+    font-weight: 800; font-size: 19px; letter-spacing: -.5px;
+  }
+  .profile-identity h3 { margin: 0; font-size: 16px; letter-spacing: -.2px; }
+  .profile-identity p { margin: 3px 0 0; color: var(--muted); font-size: 11.5px; }
+  .profile-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .profile-log { height: 340px; overflow: auto; background: #070E1B; border: 1px solid var(--border-soft); border-radius: 10px; padding: 4px 0; }
+  .profile-trace { cursor: pointer; }
+  .profile-trace:hover { background: rgba(47,123,255,.07); }
   @media (max-width: 1100px) {
     .trace-layout { grid-template-columns: 1fr; }
     .trace-list { max-height: 300px; }
@@ -353,6 +367,7 @@
     <button type="button" class="tab-btn" data-tab="traces">Trazas</button>
     <button type="button" class="tab-btn" data-tab="front">Logs front</button>
     <button type="button" class="tab-btn" data-tab="stats">Estadísticas</button>
+    <button type="button" class="tab-btn" data-tab="profile">Perfil 360</button>
   </nav>
 
   <div id="panel-overview" class="tab-panel active">
@@ -599,6 +614,17 @@
     </p>
   </div>
 
+  <div id="panel-profile" class="tab-panel">
+    <div class="searchbar">
+      <input id="profileSearch" type="search" placeholder="userId del usuario (ej. u_123)…" autocomplete="off">
+      <button class="btn primary" type="button" id="profileSearchBtn">Buscar perfil</button>
+      <span class="muted tiny" id="profileHint">Cuenta, suscripción, solicitudes, ofertas, calificaciones, logs y trazas en una sola vista.</span>
+    </div>
+    <div id="profileBody">
+      <div class="empty">Escribe un userId y pulsa “Buscar perfil”.</div>
+    </div>
+  </div>
+
   <p class="foot">Galibu v1.0.0 · monitor interno · solo se contabiliza el tráfico de <code>/api/**</code>; el dashboard y los escaneos externos se excluyen</p>
 </main>
 
@@ -635,6 +661,9 @@
     frontEvent: '',
     frontFrom: '',
     frontTo: '',
+    profileUserId: '',
+    profileData: null,
+    profileLoading: false,
     stats: null
   };
 
@@ -1647,6 +1676,243 @@
     });
   }
 
+  var PROFILE_PLANS = { MONTHLY: 'Mensual', YEARLY: 'Anual', FREE: 'Gratis', PRO: 'Pro' };
+  var PROFILE_STATUS = { ACTIVE: 'Activa', EXPIRED: 'Vencida', CANCELLED: 'Cancelada', NONE: 'Sin plan' };
+
+  function stamp(value) {
+    if (value == null || value === '') return '—';
+    var n = Number(value);
+    return isNaN(n) ? String(value) : fmtDateTime(n);
+  }
+
+  function listOf(value) {
+    if (!Array.isArray(value)) return [];
+    return value.filter(function (item) { return item && !item.error; });
+  }
+
+  function profileTable(headers, rows, emptyText) {
+    if (!rows || !rows.length) return '<div class="empty">' + esc(emptyText || 'Sin datos.') + '</div>';
+    return '<div class="table-wrap small"><table class="stats-table"><thead><tr>' +
+      headers.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('') +
+      '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>';
+  }
+
+  function profileStarRow(stars) {
+    var n = Number(stars) || 0;
+    return '<span title="' + n + ' / 5">' + n + ' / 5</span>';
+  }
+
+  function refreshProfile() {
+    var userId = $('profileSearch').value.trim();
+    if (!userId) {
+      $('profileBody').innerHTML = '<div class="empty">Escribe un userId para buscar el perfil.</div>';
+      return;
+    }
+    state.profileUserId = userId;
+    state.profileLoading = true;
+    $('profileHint').textContent = 'Consultando ' + userId + '…';
+    $('profileBody').innerHTML = '<div class="empty">Cargando perfil de ' + esc(userId) + '…</div>';
+    getJSON('/api/monitor/user-profile/' + encodeURIComponent(userId))
+      .then(function (payload) {
+        state.profileLoading = false;
+        $('profileHint').textContent = 'Perfil de ' + userId + ' actualizado ' + fmtClock(Date.now());
+        renderProfile(payload);
+      })
+      .catch(function () {
+        state.profileLoading = false;
+        $('profileHint').textContent = 'No se pudo consultar ' + userId;
+        $('profileBody').innerHTML = '<div class="empty">No se pudo cargar el perfil de <b>' +
+          esc(userId) + '</b>. Revisa el userId o la conexión.</div>';
+      });
+  }
+
+  function renderProfile(payload) {
+    state.profileData = payload;
+    var user = payload.user || {};
+    if (user.error) {
+      $('profileBody').innerHTML = '<div class="empty">No se encontró el usuario <b>' +
+        esc(payload.userId) + '</b>.<br>' + esc(user.error) + '</div>';
+      return;
+    }
+
+    var subs = listOf(payload.subscriptions);
+    var jobsClient = listOf(payload.jobsAsClient);
+    var jobsPro = listOf(payload.jobsAsProfessional);
+    var bids = listOf(payload.bids);
+    var given = listOf(payload.ratingsGiven);
+    var received = listOf(payload.ratingsReceived);
+    var frontItems = listOf(payload.frontLogs);
+    var userTraces = listOf(payload.traces);
+    var devices = listOf(payload.devices);
+    if (!devices.length) {
+      devices = [];
+      frontItems.forEach(function (item) {
+        if (item.device && devices.indexOf(item.device) < 0) devices.push(item.device);
+      });
+    }
+
+    var activeSub = subs.filter(function (s) { return s.status === 'ACTIVE'; })[0];
+    var plan = (user.subscription_plan || 'FREE');
+    var planStatus = activeSub ? activeSub.status : (user.subscription_status || 'NONE');
+    var avgReceived = received.length
+      ? (received.reduce(function (sum, r) { return sum + (Number(r.stars) || 0); }, 0) / received.length)
+      : 0;
+    var activeJobsClient = jobsClient.filter(function (j) { return j.status !== 'COMPLETED' && j.status !== 'CANCELLED'; }).length;
+    var frontErrors = frontItems.filter(function (l) { return l.level === 'ERROR'; }).length;
+    var initials = String(user.name || payload.userId || '?').trim().charAt(0).toUpperCase();
+
+    var html = '<article class="card" style="margin-bottom:14px">' +
+      '<div class="profile-head">' +
+        '<div class="profile-avatar">' + esc(initials) + '</div>' +
+        '<div class="profile-identity">' +
+          '<h3>' + esc(user.name || 'Sin nombre') + '</h3>' +
+          '<p>' + esc(user.email || '—') + ' · <code>' + esc(user.id) + '</code></p>' +
+        '</div>' +
+        '<div class="profile-chips">' +
+          '<span class="chip">' + esc(user.role || '—') + '</span>' +
+          '<span class="chip">' + esc(user.auth_provider || 'LOCAL') + '</span>' +
+          '<span class="chip">' + (user.is_verified ? 'Verificado' : 'Sin verificar') + '</span>' +
+          '<span class="chip">Plan ' + esc(PROFILE_PLANS[plan] || plan) + '</span>' +
+          '<span class="chip">' + esc(PROFILE_STATUS[planStatus] || planStatus) + '</span>' +
+        '</div>' +
+      '</div>' +
+    '</article>';
+
+    html += '<div class="stats-kpis">' + [
+      statKpi('Solicitudes como cliente', fmtNum(jobsClient.length),
+        fmtNum(activeJobsClient) + ' activas'),
+      statKpi('Solicitudes como profesional', fmtNum(jobsPro.length),
+        fmtNum(jobsPro.filter(function (j) { return j.status === 'COMPLETED'; }).length) + ' completadas'),
+      statKpi('Ofertas enviadas', fmtNum(bids.length),
+        fmtNum(bids.filter(function (b) { return b.status === 'ACCEPTED'; }).length) + ' aceptadas'),
+      statKpi('Calificación recibida', received.length ? avgReceived.toFixed(2) + ' / 5' : '—',
+        fmtNum(received.length) + ' reseñas · ' + fmtNum(given.length) + ' dadas',
+        avgReceived >= 4.5 ? 'green' : (received.length && avgReceived < 3.5 ? 'red' : ''))
+    ].join('') + '</div>';
+
+    var accountRows = [
+      ['ID', user.id], ['Nombre', user.name], ['Email', user.email], ['Teléfono', user.phone || '—'],
+      ['Rol', user.role], ['Proveedor de acceso', user.auth_provider],
+      ['Verificado', user.is_verified ? 'Sí' : 'No'],
+      ['Plan', (PROFILE_PLANS[plan] || plan) + ' · ' + (PROFILE_STATUS[planStatus] || planStatus)],
+      ['Vence', stamp(user.subscription_expires_at)],
+      ['Calificación', user.rating == null ? '—' : Number(user.rating).toFixed(2) + ' / 5'],
+      ['Trabajos completados', fmtNum(user.completed_jobs)],
+      ['Saldo', fmtMoney(user.balance)],
+      ['Ubicación', [user.department, user.municipality].filter(Boolean).join(' / ') || '—'],
+      ['Categoría de trabajo', user.work_category || '—'],
+      ['Creado', stamp(user.created_at)], ['Actualizado', stamp(user.updated_at)]
+    ];
+
+    var subRows = subs.map(function (s) {
+      return '<tr><td>' + esc(PROFILE_PLANS[s.plan] || s.plan) + '</td>' +
+        '<td>' + esc(PROFILE_STATUS[s.status] || s.status) + '</td>' +
+        '<td class="num">' + fmtMoney(s.amount) + '</td>' +
+        '<td class="num">' + stamp(s.started_at) + '</td>' +
+        '<td class="num">' + stamp(s.expires_at) + '</td></tr>';
+    });
+
+    var clientRows = jobsClient.map(function (j) {
+      return '<tr><td>' + esc(j.title) + '<div class="muted tiny">' + esc(j.category || '—') + '</div></td>' +
+        '<td>' + esc(j.status) + '</td>' +
+        '<td class="num">' + fmtMoney(j.budget_min) + '</td>' +
+        '<td class="num">' + (j.final_price == null ? '—' : fmtMoney(j.final_price)) + '</td>' +
+        '<td>' + esc(j.professional_name || '—') + '</td>' +
+        '<td class="num">' + stamp(j.created_at) + '</td></tr>';
+    });
+
+    var proRows = jobsPro.map(function (j) {
+      return '<tr><td>' + esc(j.title) + '<div class="muted tiny">' + esc(j.category || '—') + '</div></td>' +
+        '<td>' + esc(j.status) + '</td>' +
+        '<td class="num">' + (j.final_price == null ? '—' : fmtMoney(j.final_price)) + '</td>' +
+        '<td>' + esc(j.client_name || '—') + '</td>' +
+        '<td class="num">' + stamp(j.created_at) + '</td></tr>';
+    });
+
+    var bidRows = bids.map(function (b) {
+      return '<tr><td>' + esc(b.job_title || b.job_id) + '</td>' +
+        '<td class="num">' + fmtMoney(b.amount) + '</td>' +
+        '<td>' + esc(b.status) + '</td>' +
+        '<td>' + esc(b.quote_type || '—') + '</td>' +
+        '<td class="num">' + fmtNum(b.counter_round) + '</td>' +
+        '<td class="num">' + stamp(b.created_at) + '</td></tr>';
+    });
+
+    var receivedRows = received.map(function (r) {
+      return '<tr><td>' + profileStarRow(r.stars) + '</td>' +
+        '<td>' + esc(r.comment || '—') + '</td>' +
+        '<td>' + esc(r.rater_id) + '</td>' +
+        '<td class="num">' + stamp(r.created_at) + '</td></tr>';
+    });
+
+    var givenRows = given.map(function (r) {
+      return '<tr><td>' + profileStarRow(r.stars) + '</td>' +
+        '<td>' + esc(r.comment || '—') + '</td>' +
+        '<td>' + esc(r.rated_id) + '</td>' +
+        '<td class="num">' + stamp(r.created_at) + '</td></tr>';
+    });
+
+    var traceRows = userTraces.map(function (t) {
+      return '<tr class="profile-trace" data-trace-id="' + esc(t.requestId) + '">' +
+        '<td>' + esc(t.requestId) + '</td>' +
+        '<td>' + statusBadge(t.lastStatus) + '</td>' +
+        '<td class="num">' + fmtNum(t.calls) + '</td>' +
+        '<td class="num">' + fmtMs(t.durationMs) + '</td>' +
+        '<td class="num">' + fmtClock(t.lastAt) + '</td></tr>';
+    });
+
+    var frontRows = frontItems.map(function (log) {
+      var level = String(log.level || 'INFO').toLowerCase();
+      var meta = frontMetadata(log);
+      return '<div class="front-row l-' + esc(level) + '">' +
+        '<span class="log-time">' + fmtClock(log.at) + '</span>' +
+        '<span class="log-level">' + esc(log.level) + '</span>' +
+        '<span class="front-app">' + esc(log.app) + '</span>' +
+        '<div class="log-msg">' + esc(log.message) +
+          (log.requestId ? ' ' + requestIdLink(log.requestId) : '') +
+          '<div class="front-meta">' +
+            (log.tag ? '<span class="front-tag">' + esc(log.tag) + '</span>' : '') +
+            (meta ? '<span>' + esc(meta) + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    var deviceChips = devices.length
+      ? devices.map(function (d) { return '<span class="chip">' + esc(d) + '</span>'; }).join(' ')
+      : '<div class="empty">Sin dispositivos registrados en los logs front.</div>';
+
+    html += '<section class="grid cols-2">' +
+      statPanel('Cuenta', keyValueTable(accountRows)) +
+      statPanel('Suscripciones', profileTable(
+        ['Plan', 'Estado', 'Monto', 'Inicio', 'Vence'], subRows, 'Sin suscripciones registradas.')) +
+      statPanel('Solicitudes como cliente', profileTable(
+        ['Solicitud', 'Estado', 'Presupuesto', 'Precio final', 'Profesional', 'Creada'],
+        clientRows, 'Aún no ha creado solicitudes.')) +
+      statPanel('Solicitudes como profesional', profileTable(
+        ['Solicitud', 'Estado', 'Precio final', 'Cliente', 'Creada'],
+        proRows, 'Aún no tiene trabajos asignados.')) +
+      statPanel('Ofertas enviadas', profileTable(
+        ['Solicitud', 'Monto', 'Estado', 'Tipo', 'Ronda', 'Creada'],
+        bidRows, 'Aún no ha enviado ofertas.')) +
+      statPanel('Calificaciones recibidas', profileTable(
+        ['Estrellas', 'Comentario', 'De', 'Fecha'], receivedRows, 'Sin calificaciones recibidas.')) +
+      statPanel('Calificaciones dadas', profileTable(
+        ['Estrellas', 'Comentario', 'Para', 'Fecha'], givenRows, 'Sin calificaciones dadas.')) +
+      statPanel('Dispositivos', '<div class="profile-chips">' + deviceChips + '</div>' +
+        '<p class="stat-note">' + fmtNum(frontItems.length) + ' eventos front · ' +
+        fmtNum(frontErrors) + ' errores · ' + fmtNum(userTraces.length) + ' trazas de backend.</p>') +
+      statPanel('Trazas del backend', profileTable(
+        ['Request ID', 'Estado', 'Llamadas', 'Duración', 'Última'], traceRows,
+        'Sin trazas recientes en memoria.')) +
+      statPanel('Logs front recientes', frontRows
+        ? '<div class="profile-log">' + frontRows + '</div>'
+        : '<div class="empty">Sin logs front para este usuario.</div>') +
+    '</section>';
+
+    $('profileBody').innerHTML = html;
+  }
+
   function switchTab(tab) {
     state.tab = tab;
     Array.prototype.forEach.call(document.querySelectorAll('.tab-btn'), function (button) {
@@ -1662,6 +1928,9 @@
     if (tab === 'traces') refreshTraces();
     if (tab === 'front') refreshFrontLogs();
     if (tab === 'stats') refreshStats();
+    if (tab === 'profile' && state.profileUserId && !$('profileSearch').value) {
+      $('profileSearch').value = state.profileUserId;
+    }
   }
 
   function render(data) {
@@ -1850,6 +2119,24 @@
     $('frontFrom').value = '';
     $('frontTo').value = '';
     refreshFrontLogs();
+  });
+
+  $('profileSearchBtn').addEventListener('click', refreshProfile);
+
+  $('profileSearch').addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    refreshProfile();
+  });
+
+  $('profileBody').addEventListener('click', function (event) {
+    var traceRow = event.target.closest('[data-trace-id]');
+    if (traceRow) {
+      openTraceSearch(traceRow.getAttribute('data-trace-id'));
+      return;
+    }
+    var link = event.target.closest('.rid-link');
+    if (link) openTraceSearch(link.getAttribute('data-rid'));
   });
 
   $('frontLogs').addEventListener('click', function (event) {

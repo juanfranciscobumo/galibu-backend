@@ -138,9 +138,9 @@ public class AppStatsService {
         try {
             revenue.put("activeSubscriptions", value("select count(*) from subscriptions where status = 'ACTIVE'"));
             revenue.put("mrr", decimal(
-                "select coalesce(sum(amount), 0) from subscriptions where status = 'ACTIVE' and plan = 'MENSUAL'"));
+                "select coalesce(sum(amount), 0) from subscriptions where status = 'ACTIVE' and plan = 'MONTHLY'"));
             revenue.put("arr", decimal(
-                "select coalesce(sum(amount), 0) from subscriptions where status = 'ACTIVE' and plan = 'ANUAL'"));
+                "select coalesce(sum(amount), 0) from subscriptions where status = 'ACTIVE' and plan = 'YEARLY'"));
             revenue.put("totalRevenue", decimal("select coalesce(sum(amount), 0) from subscriptions"));
             revenue.put("subscriptionsByPlan", countBy(
                 "select plan, count(*) as c from subscriptions where status = 'ACTIVE' group by plan", "plan", "c"));

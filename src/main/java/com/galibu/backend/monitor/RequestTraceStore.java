@@ -104,6 +104,24 @@ public class RequestTraceStore {
         return out;
     }
 
+    /** Busca transacciones de un usuario concreto (por userId de la traza). */
+    public synchronized List<Map<String, Object>> searchByUserId(String userId, int limit) {
+        String needle = userId == null ? "" : userId.trim().toLowerCase(Locale.ROOT);
+        List<Trace> matches = new ArrayList<>();
+        for (Trace trace : traces.values()) {
+            if (trace.userId != null && trace.userId.toLowerCase(Locale.ROOT).equals(needle)) {
+                matches.add(trace);
+            }
+        }
+        matches.sort(Comparator.comparingLong((Trace t) -> t.lastAt).reversed());
+        List<Map<String, Object>> out = new ArrayList<>();
+        int max = Math.max(1, Math.min(limit, 100));
+        for (int i = 0; i < matches.size() && out.size() < max; i++) {
+            out.add(matches.get(i).summary());
+        }
+        return out;
+    }
+
     public synchronized Map<String, Object> detail(String requestId) {
         Trace trace = traces.get(requestId);
         return trace == null ? null : trace.detail();

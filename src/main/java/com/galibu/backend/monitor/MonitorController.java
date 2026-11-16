@@ -6,8 +6,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,6 +31,7 @@ public class MonitorController {
     private final RequestTraceStore traces;
     private final FrontLogStore frontLogs;
     private final AppStatsService appStats;
+    private final JdbcTemplate jdbc;
 
     public MonitorController(
         RequestMetrics metrics,
@@ -38,7 +41,8 @@ public class MonitorController {
         EndpointCatalog catalog,
         RequestTraceStore traces,
         FrontLogStore frontLogs,
-        AppStatsService appStats
+        AppStatsService appStats,
+        JdbcTemplate jdbc
     ) {
         this.metrics = metrics;
         this.jvm = jvm;
@@ -48,6 +52,7 @@ public class MonitorController {
         this.traces = traces;
         this.frontLogs = frontLogs;
         this.appStats = appStats;
+        this.jdbc = jdbc;
     }
 
     @GetMapping("/data")
@@ -102,6 +107,110 @@ public class MonitorController {
     @GetMapping("/app-stats")
     public Map<String, Object> appStats() {
         return appStats.snapshot();
+    }
+
+    /**
+     * Perfil 360 de un usuario: datos de cuenta, suscripción, solicitudes como
+     * cliente y como profesional, ofertas, calificaciones, logs del front y
+     * trazas del backend. Útil para depurar un usuario concreto desde el monitor.
+     */
+    @GetMapping("/user-profile/{userId}")
+    public Map<String, Object> userProfile(@PathVariable String userId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("userId", userId);
+
+        try {
+            Map<String, Object> user = jdbc.queryForMap(
+                "select id, name, email, phone, role, auth_provider, is_verified, rating, completed_jobs, balance,"
+                    + " subscription_plan, subscription_status, subscription_expires_at, department, municipality,"
+                    + " work_category, hourly_rate, created_at, updated_at from users where id = ?",
+                userId);
+            out.put("user", user);
+        } catch (Exception ex) {
+            out.put("user", Map.of("error", ex.getMessage()));
+        }
+
+        try {
+            List<Map<String, Object>> subs = jdbc.queryForList(
+                "select id, plan, status, amount, started_at, expires_at, bold_order_id, created_at, updated_at from subscriptions where user_id = ? order by created_at desc",
+                userId);
+            out.put("subscriptions", subs);
+        } catch (Exception ex) {
+            out.put("subscriptions", List.of(Map.of("error", ex.getMessage())));
+        }
+
+        try {
+            List<Map<String, Object>> jobsAsClient = jdbc.queryForList(
+                "select id, title, category, status, budget_min, final_price, professional_id, professional_name, created_at, updated_at from jobs where client_id = ? order by created_at desc limit 20",
+                userId);
+            out.put("jobsAsClient", jobsAsClient);
+        } catch (Exception ex) {
+            out.put("jobsAsClient", List.of(Map.of("error", ex.getMessage())));
+        }
+
+        try {
+            List<Map<String, Object>> jobsAsPro = jdbc.queryForList(
+                "select id, title, category, status, budget_min, final_price, client_id, client_name, created_at, updated_at from jobs where professional_id = ? order by created_at desc limit 20",
+                userId);
+            out.put("jobsAsProfessional", jobsAsPro);
+        } catch (Exception ex) {
+            out.put("jobsAsProfessional", List.of(Map.of("error", ex.getMessage())));
+        }
+
+        try {
+            List<Map<String, Object>> bids = jdbc.queryForList(
+                "select b.id, b.job_id, j.title as job_title, b.amount, b.status, b.quote_type, b.counter_round, b.visit_required, b.created_at"
+                    + " from bids b join jobs j on j.id = b.job_id where b.professional_id = ? order by b.created_at desc limit 20",
+                userId);
+            out.put("bids", bids);
+        } catch (Exception ex) {
+            out.put("bids", List.of(Map.of("error", ex.getMessage())));
+        }
+
+        try {
+            List<Map<String, Object>> ratingsGiven = jdbc.queryForList(
+                "select id, job_id, rated_id, stars, comment, created_at from ratings where rater_id = ? order by created_at desc limit 20",
+                userId);
+            out.put("ratingsGiven", ratingsGiven);
+        } catch (Exception ex) {
+            out.put("ratingsGiven", List.of(Map.of("error", ex.getMessage())));
+        }
+
+        try {
+            List<Map<String, Object>> ratingsReceived = jdbc.queryForList(
+                "select id, job_id, rater_id, stars, comment, created_at from ratings where rated_id = ? order by created_at desc limit 20",
+                userId);
+            out.put("ratingsReceived", ratingsReceived);
+        } catch (Exception ex) {
+            out.put("ratingsReceived", List.of(Map.of("error", ex.getMessage())));
+        }
+
+        try {
+            List<Map<String, Object>> frontLogsItems = frontLogs.recentExtended(
+                "ALL", "ALL", null, userId, null, null, null, null, null, null,
+                null, null, 100);
+            out.put("frontLogs", frontLogsItems);
+            Set<String> devices = new java.util.LinkedHashSet<>();
+            for (Map<String, Object> item : frontLogsItems) {
+                Object device = item.get("device");
+                if (device != null && !String.valueOf(device).isBlank()) {
+                    devices.add(String.valueOf(device));
+                }
+            }
+            out.put("devices", new ArrayList<>(devices));
+        } catch (Exception ex) {
+            out.put("frontLogs", List.of(Map.of("error", ex.getMessage())));
+            out.put("devices", List.of());
+        }
+
+        try {
+            List<Map<String, Object>> userTraces = traces.searchByUserId(userId, 50);
+            out.put("traces", userTraces);
+        } catch (Exception ex) {
+            out.put("traces", List.of(Map.of("error", ex.getMessage())));
+        }
+
+        return out;
     }
 
     /**
