@@ -62,9 +62,41 @@ public class FrontLogStore {
         String query,
         int limit
     ) {
+        return recentExtended(level, app, query, null, null, null, null, null, null, null, null, null, limit);
+    }
+
+    /**
+     * Lista de logs con filtros extendidos: nivel, app, texto libre, usuario,
+     * dispositivo, marca, modelo, versión de app, pantalla, evento y rango de
+     * fechas (from/to en epoch ms).
+     */
+    public synchronized List<Map<String, Object>> recentExtended(
+        String level,
+        String app,
+        String query,
+        String userId,
+        String device,
+        String brand,
+        String model,
+        String version,
+        String screen,
+        String event,
+        Long from,
+        Long to,
+        int limit
+    ) {
         String wantedLevel = level == null ? "ALL" : level.trim().toUpperCase(Locale.ROOT);
         String wantedApp = app == null ? "ALL" : app.trim().toLowerCase(Locale.ROOT);
         String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        String wantedUser = userId == null ? "" : userId.trim().toLowerCase(Locale.ROOT);
+        String wantedDevice = device == null ? "" : device.trim().toLowerCase(Locale.ROOT);
+        String wantedBrand = brand == null ? "" : brand.trim().toLowerCase(Locale.ROOT);
+        String wantedModel = model == null ? "" : model.trim().toLowerCase(Locale.ROOT);
+        String wantedVersion = version == null ? "" : version.trim().toLowerCase(Locale.ROOT);
+        String wantedScreen = screen == null ? "" : screen.trim().toLowerCase(Locale.ROOT);
+        String wantedEvent = event == null ? "" : event.trim().toLowerCase(Locale.ROOT);
+        long wantedFrom = from == null ? 0L : from;
+        long wantedTo = to == null ? Long.MAX_VALUE : to;
         int max = Math.max(1, Math.min(limit, 500));
         List<Map<String, Object>> out = new ArrayList<>();
         List<Entry> copy = new ArrayList<>(entries);
@@ -80,9 +112,108 @@ public class FrontLogStore {
             if (!needle.isEmpty() && !entry.matches(needle)) {
                 continue;
             }
+            if (!wantedUser.isEmpty() && !wantedUser.equals(entry.userId.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            if (!wantedDevice.isEmpty() && !wantedDevice.equals(entry.device.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            if (!wantedBrand.isEmpty() && !brandOf(entry.device).equals(wantedBrand)) {
+                continue;
+            }
+            if (!wantedModel.isEmpty() && !modelOf(entry.device).equals(wantedModel)) {
+                continue;
+            }
+            if (!wantedVersion.isEmpty() && !wantedVersion.equals(entry.version.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            if (!wantedScreen.isEmpty() && !wantedScreen.equals(entry.screen.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            if (!wantedEvent.isEmpty() && !wantedEvent.equals(entry.event.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            if (entry.at < wantedFrom || entry.at > wantedTo) {
+                continue;
+            }
             out.add(entry.toMap());
         }
         return out;
+    }
+
+    /**
+     * Resumen de dispositivos: marcas, modelos, usuarios y errores agrupados por
+     * dispositivo. Útil para la tarjeta "Dispositivos" del monitor.
+     */
+    public synchronized Map<String, Object> deviceSummary() {
+        Map<String, Long> byBrand = new HashMap<>();
+        Map<String, Long> byModel = new HashMap<>();
+        Map<String, Long> usersByDevice = new HashMap<>();
+        Map<String, Long> errorsByDevice = new HashMap<>();
+        long totalWithDevice = 0;
+
+        for (Entry entry : entries) {
+            String device = entry.device;
+            if (device == null || device.isBlank()) {
+                continue;
+            }
+            totalWithDevice++;
+            String brand = brandOf(device);
+            String model = modelOf(device);
+            bump(byBrand, brand);
+            bump(byModel, model);
+            if (!entry.userId.isBlank()) {
+                usersByDevice.merge(device, 1L, Long::sum);
+            }
+            if ("ERROR".equals(entry.level)) {
+                errorsByDevice.merge(device, 1L, Long::sum);
+            }
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("totalWithDevice", totalWithDevice);
+        out.put("byBrand", sortedCounts(byBrand, 10));
+        out.put("byModel", sortedCounts(byModel, 15));
+        out.put("usersByDevice", topUsersByDevice(usersByDevice, 10));
+        out.put("errorsByDevice", sortedCounts(errorsByDevice, 10));
+        return out;
+    }
+
+    private static List<Map<String, Object>> topUsersByDevice(Map<String, Long> usersByDevice, int limit) {
+        List<Map.Entry<String, Long>> ordered = new ArrayList<>(usersByDevice.entrySet());
+        ordered.sort(Comparator
+            .comparingLong((Map.Entry<String, Long> e) -> e.getValue()).reversed()
+            .thenComparing(Map.Entry::getKey));
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (int i = 0; i < ordered.size() && i < limit; i++) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("device", ordered.get(i).getKey());
+            item.put("users", ordered.get(i).getValue());
+            out.add(item);
+        }
+        return out;
+    }
+
+    /** Extrae la marca (primera palabra) de una cadena tipo "Xiaomi Redmi Note 11". */
+    private static String brandOf(String device) {
+        if (device == null || device.isBlank()) {
+            return "—";
+        }
+        String trimmed = device.trim();
+        int space = trimmed.indexOf(' ');
+        String brand = space >= 0 ? trimmed.substring(0, space) : trimmed;
+        return brand.isBlank() ? "—" : brand;
+    }
+
+    /** Extrae el modelo (todo menos la primera palabra). */
+    private static String modelOf(String device) {
+        if (device == null || device.isBlank()) {
+            return "—";
+        }
+        String trimmed = device.trim();
+        int space = trimmed.indexOf(' ');
+        String model = space >= 0 ? trimmed.substring(space + 1).trim() : trimmed;
+        return model.isBlank() ? "—" : model;
     }
 
     public synchronized Map<String, Object> summary() {

@@ -54,6 +54,7 @@ public class AppStatsService {
         Map<String, Object> bids = new LinkedHashMap<>();
         Map<String, Object> ratings = new LinkedHashMap<>();
         Map<String, Object> wallet = new LinkedHashMap<>();
+        Map<String, Object> revenue = new LinkedHashMap<>();
 
         try {
             Map<String, Long> roles = countBy("select role, count(*) as c from users group by role", "role", "c");
@@ -134,6 +135,47 @@ public class AppStatsService {
             wallet.put("error", ex.getMessage());
         }
 
+        try {
+            revenue.put("activeSubscriptions", value("select count(*) from subscriptions where status = 'ACTIVE'"));
+            revenue.put("mrr", decimal(
+                "select coalesce(sum(amount), 0) from subscriptions where status = 'ACTIVE' and plan = 'MENSUAL'"));
+            revenue.put("arr", decimal(
+                "select coalesce(sum(amount), 0) from subscriptions where status = 'ACTIVE' and plan = 'ANUAL'"));
+            revenue.put("totalRevenue", decimal("select coalesce(sum(amount), 0) from subscriptions"));
+            revenue.put("subscriptionsByPlan", countBy(
+                "select plan, count(*) as c from subscriptions where status = 'ACTIVE' group by plan", "plan", "c"));
+            revenue.put("revenueByPlan", rows(
+                "select plan, count(*) as count, coalesce(sum(amount), 0) as amount"
+                    + " from subscriptions where status = 'ACTIVE' group by plan order by amount desc"));
+            revenue.put("totalToday", decimal(
+                "select coalesce(sum(amount), 0) from subscriptions where created_at >= ? and created_at < ?",
+                todayStart, tomorrowStart));
+            revenue.put("totalYesterday", decimal(
+                "select coalesce(sum(amount), 0) from subscriptions where created_at >= ? and created_at < ?",
+                yesterdayStart, todayStart));
+            revenue.put("total7d", decimal(
+                "select coalesce(sum(amount), 0) from subscriptions where created_at >= ? and created_at < ?",
+                weekStart, tomorrowStart));
+            revenue.put("total30d", decimal(
+                "select coalesce(sum(amount), 0) from subscriptions where created_at >= ? and created_at < ?",
+                monthStart, tomorrowStart));
+            revenue.put("expiredToday", value(
+                "select count(*) from subscriptions where status = 'EXPIRED' and expires_at >= ? and expires_at < ?",
+                todayStart, tomorrowStart));
+            revenue.put("cancelledToday", value(
+                "select count(*) from subscriptions where status = 'CANCELLED' and updated_at >= ? and updated_at < ?",
+                todayStart, tomorrowStart));
+            long pros = value("select count(*) from users where role = 'PROFESSIONAL' or role = 'BOTH'");
+            long prosPro = value("select count(*) from users where subscription_plan = 'PRO'");
+            revenue.put("conversionRate", pros > 0 ? Math.round(prosPro * 100.0 / pros) / 100.0 : 0.0);
+            revenue.put("topSpenders", rows(
+                "select u.id, u.name, u.subscription_plan, s.amount, s.status, s.expires_at"
+                    + " from subscriptions s join users u on u.id = s.user_id"
+                    + " where s.status = 'ACTIVE' order by s.amount desc limit 10"));
+        } catch (Exception ex) {
+            revenue.put("error", ex.getMessage());
+        }
+
         List<Map<String, Object>> days = usage.recentDays();
         Map<String, Object> usageOut = new LinkedHashMap<>();
         usageOut.put("today", findDay(days, today.toString()));
@@ -156,6 +198,7 @@ public class AppStatsService {
         out.put("bids", bids);
         out.put("ratings", ratings);
         out.put("wallet", wallet);
+        out.put("revenue", revenue);
         out.put("usage", usageOut);
         out.put("devices", devices);
         out.put("front", frontLogs.summary());

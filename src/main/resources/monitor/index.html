@@ -141,6 +141,7 @@
   .bar i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--blue), var(--blue-2)); transition: width .35s ease; }
   .bar i.green { background: linear-gradient(90deg, #16A34A, var(--green)); }
   .bar i.cyan { background: linear-gradient(90deg, #0891B2, var(--cyan)); }
+  .bar i.blue { background: linear-gradient(90deg, #3B82F6, var(--blue)); }
   .stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 13px; }
   .stat-grid.tight { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .stat { background: #0A1322; border: 1px solid var(--border-soft); border-radius: 10px; padding: 8px 10px; min-width: 0; }
@@ -561,7 +562,24 @@
             <option value="client">Cliente</option>
             <option value="professional">Profesional</option>
           </select>
+          <select id="frontLevel">
+            <option value="ALL">Todos los niveles</option>
+            <option value="EVENT">Eventos</option>
+            <option value="INFO">INFO</option>
+            <option value="WARN">WARN</option>
+            <option value="ERROR">ERROR</option>
+          </select>
+          <input id="frontUser" type="search" placeholder="Usuario (userId)" autocomplete="off">
+          <input id="frontDevice" type="search" placeholder="Dispositivo (marca modelo)" autocomplete="off">
+          <input id="frontBrand" type="search" placeholder="Marca" autocomplete="off">
+          <input id="frontModel" type="search" placeholder="Modelo" autocomplete="off">
+          <input id="frontVersion" type="search" placeholder="Versión app" autocomplete="off">
+          <input id="frontScreen" type="search" placeholder="Pantalla" autocomplete="off">
+          <input id="frontEvent" type="search" placeholder="Evento" autocomplete="off">
+          <input id="frontFrom" type="datetime-local" placeholder="Desde">
+          <input id="frontTo" type="datetime-local" placeholder="Hasta">
           <button class="btn primary" type="button" id="frontSearchBtn">Filtrar</button>
+          <button class="btn" type="button" id="frontResetBtn">Limpiar</button>
           <span class="muted tiny" id="frontSummary">—</span>
         </div>
         <div class="logs front-logs" id="frontLogs"><div class="empty">Cargando…</div></div>
@@ -608,6 +626,15 @@
     frontLevel: 'ALL',
     frontApp: 'ALL',
     frontQuery: '',
+    frontUser: '',
+    frontDevice: '',
+    frontBrand: '',
+    frontModel: '',
+    frontVersion: '',
+    frontScreen: '',
+    frontEvent: '',
+    frontFrom: '',
+    frontTo: '',
     stats: null
   };
 
@@ -1365,9 +1392,22 @@
 
   function refreshFrontLogs() {
     if (state.paused) return;
-    getJSON('/api/monitor/front-logs?level=' + encodeURIComponent(state.frontLevel) +
+    var from = state.frontFrom ? new Date(state.frontFrom).getTime() : '';
+    var to = state.frontTo ? new Date(state.frontTo).getTime() : '';
+    var url = '/api/monitor/front-logs?level=' + encodeURIComponent(state.frontLevel) +
       '&app=' + encodeURIComponent(state.frontApp) +
-      '&q=' + encodeURIComponent(state.frontQuery || '') + '&limit=400')
+      '&q=' + encodeURIComponent(state.frontQuery || '') +
+      '&userId=' + encodeURIComponent(state.frontUser || '') +
+      '&device=' + encodeURIComponent(state.frontDevice || '') +
+      '&brand=' + encodeURIComponent(state.frontBrand || '') +
+      '&model=' + encodeURIComponent(state.frontModel || '') +
+      '&version=' + encodeURIComponent(state.frontVersion || '') +
+      '&screen=' + encodeURIComponent(state.frontScreen || '') +
+      '&event=' + encodeURIComponent(state.frontEvent || '') +
+      '&from=' + encodeURIComponent(from || '') +
+      '&to=' + encodeURIComponent(to || '') +
+      '&limit=400';
+    getJSON(url)
       .then(renderFrontLogs)
       .catch(function () { /* la píldora de conexión ya refleja el estado */ });
   }
@@ -1419,6 +1459,7 @@
     var bids = payload.bids || {};
     var ratings = payload.ratings || {};
     var wallet = payload.wallet || {};
+    var revenue = payload.revenue || {};
     var usage = payload.usage || {};
     var front = payload.front || {};
     var devices = payload.devices || {};
@@ -1442,7 +1483,11 @@
       statKpi('Eventos front hoy', fmtNum(front.today),
         fmtNum(front.errors) + ' errores · ' + fmtNum(front.usersToday) + ' usuarios', front.errors ? 'red' : ''),
       statKpi('Trazas en memoria', fmtNum(traces.transactions),
-        fmtNum(traces.calls) + ' llamadas · cap. ' + fmtNum(traces.capacity))
+        fmtNum(traces.calls) + ' llamadas · cap. ' + fmtNum(traces.capacity)),
+      statKpi('Ingresos Pro', fmtMoney(revenue.totalRevenue),
+        'MRR ' + fmtMoney(revenue.mrr) + ' · ARR ' + fmtMoney(revenue.arr), revenue.totalRevenue > 0 ? 'green' : ''),
+      statKpi('Suscripciones activas', fmtNum(revenue.activeSubscriptions),
+        'Conversión ' + (revenue.conversionRate || 0).toFixed(1) + ' %')
     ].join('');
 
     $('statsPanels').innerHTML = [
@@ -1504,7 +1549,94 @@
         ['Usuarios activos hoy', fmtNum((devices || {}).usersToday || front.usersToday || 0)],
         ['Eventos en buffer', fmtNum((devices || {}).buffered || front.buffered || 0)]
       ])),
-      statPanel('Categorías más solicitadas', countTable(jobs.topCategories, 'Sin categorías registradas.'))
+      statPanel('Categorías más solicitadas', countTable(jobs.topCategories, 'Sin categorías registradas.')),
+      statPanel('Ingresos Pro por plan', (function () {
+        var rows = revenue.revenueByPlan || [];
+        if (!rows.length) return '<div class="empty">Sin suscripciones activas.</div>';
+        return '<div class="table-wrap small"><table class="stats-table"><thead><tr>' +
+          '<th>Plan</th><th>Suscripciones</th><th>Ingresos</th>' +
+          '</tr></thead><tbody>' +
+          rows.map(function (r) {
+            return '<tr><td>' + esc(r.plan) + '</td><td class="num">' + fmtNum(r.count) +
+              '</td><td class="num">' + fmtMoney(r.amount) + '</td></tr>';
+          }).join('') +
+          '</tbody></table></div>';
+      })()),
+      statPanel('Ingresos por día', (function () {
+        var days = usage.days || [];
+        if (!days.length) return '<div class="empty">Sin datos de uso todavía.</div>';
+        var recent = days.slice(0, 7);
+        return '<div class="table-wrap small"><table class="stats-table"><thead><tr>' +
+          '<th>Fecha</th><th>Peticiones API</th><th>Errores</th><th>Prom.</th>' +
+          '</tr></thead><tbody>' +
+          recent.map(function (d) {
+            return '<tr><td>' + esc(d.date) + '</td><td class="num">' + fmtNum(d.requests) +
+              '</td><td class="num">' + fmtNum(d.errors) + '</td><td class="num">' + fmtMs(d.avgMs) + '</td></tr>';
+          }).join('') +
+          '</tbody></table></div>';
+      })()),
+      statPanel('Top gastadores', (function () {
+        var spenders = revenue.topSpenders || [];
+        if (!spenders.length) return '<div class="empty">Sin suscriptores activos.</div>';
+        return '<div class="table-wrap small"><table class="stats-table"><thead><tr>' +
+          '<th>Usuario</th><th>Plan</th><th>Monto</th><th>Estado</th><th>Vence</th>' +
+          '</tr></thead><tbody>' +
+          spenders.map(function (s) {
+            return '<tr><td>' + esc(s.name || s.id) + '</td><td>' + esc(s.subscription_plan) +
+              '</td><td class="num">' + fmtMoney(s.amount) + '</td>' +
+              '<td><span class="status s-' + (s.status === 'ACTIVE' ? 2 : 4) + '">' + esc(s.status) + '</span></td>' +
+              '<td class="num muted">' + (s.expires_at ? fmtDateTime(s.expires_at) : '—') + '</td></tr>';
+          }).join('') +
+          '</tbody></table></div>';
+      })()),
+      statPanel('Dispositivos por marca', (function () {
+        var brands = (payload.front && payload.front.devices && payload.front.devices.byBrand) || [];
+        if (!brands.length) return '<div class="empty">Sin datos de dispositivos.</div>';
+        var max = brands[0].count || 1;
+        return '<div class="bars">' +
+          brands.map(function (b) {
+            return '<div class="bar-row wide">' +
+              '<span title="' + esc(b.name) + '">' + esc(b.name) + '</span>' +
+              '<div class="bar"><i class="cyan" style="width:' + Math.max(2, b.count * 100 / max).toFixed(1) + '%"></i></div>' +
+              '<b>' + fmtNum(b.count) + '</b></div>';
+          }).join('') +
+          '</div>';
+      })()),
+      statPanel('Dispositivos por modelo', (function () {
+        var models = (payload.front && payload.front.devices && payload.front.devices.byModel) || [];
+        if (!models.length) return '<div class="empty">Sin datos de modelos.</div>';
+        var max = models[0].count || 1;
+        return '<div class="bars">' +
+          models.map(function (m) {
+            return '<div class="bar-row wide">' +
+              '<span title="' + esc(m.name) + '">' + esc(m.name) + '</span>' +
+              '<div class="bar"><i class="blue" style="width:' + Math.max(2, m.count * 100 / max).toFixed(1) + '%"></i></div>' +
+              '<b>' + fmtNum(m.count) + '</b></div>';
+          }).join('') +
+          '</div>';
+      })()),
+      statPanel('Errores por dispositivo', (function () {
+        var errs = (payload.front && payload.front.devices && payload.front.devices.errorsByDevice) || [];
+        if (!errs.length) return '<div class="empty">Sin errores por dispositivo.</div>';
+        return '<div class="table-wrap small"><table class="stats-table"><thead><tr>' +
+          '<th>Dispositivo</th><th>Errores</th>' +
+          '</tr></thead><tbody>' +
+          errs.map(function (e) {
+            return '<tr><td>' + esc(e.name) + '</td><td class="num">' + fmtNum(e.count) + '</td></tr>';
+          }).join('') +
+          '</tbody></table></div>';
+      })()),
+      statPanel('Usuarios por dispositivo', (function () {
+        var ud = (payload.front && payload.front.devices && payload.front.devices.usersByDevice) || [];
+        if (!ud.length) return '<div class="empty">Sin usuarios por dispositivo.</div>';
+        return '<div class="table-wrap small"><table class="stats-table"><thead><tr>' +
+          '<th>Dispositivo</th><th>Usuarios</th>' +
+          '</tr></thead><tbody>' +
+          ud.map(function (u) {
+            return '<tr><td>' + esc(u.device) + '</td><td class="num">' + fmtNum(u.users) + '</td></tr>';
+          }).join('') +
+          '</tbody></table></div>';
+      })())
     ].join('');
   }
 
@@ -1677,6 +1809,46 @@
     if (event.key !== 'Enter') return;
     event.preventDefault();
     state.frontQuery = this.value.trim();
+    refreshFrontLogs();
+  });
+
+  function bindFrontFilter(id, stateKey) {
+    $(id).addEventListener('change', function () {
+      state[stateKey] = this.value.trim();
+      refreshFrontLogs();
+    });
+    $(id).addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      state[stateKey] = this.value.trim();
+      refreshFrontLogs();
+    });
+  }
+
+  bindFrontFilter('#frontUser', 'frontUser');
+  bindFrontFilter('#frontDevice', 'frontDevice');
+  bindFrontFilter('#frontBrand', 'frontBrand');
+  bindFrontFilter('#frontModel', 'frontModel');
+  bindFrontFilter('#frontVersion', 'frontVersion');
+  bindFrontFilter('#frontScreen', 'frontScreen');
+  bindFrontFilter('#frontEvent', 'frontEvent');
+  bindFrontFilter('#frontFrom', 'frontFrom');
+  bindFrontFilter('#frontTo', 'frontTo');
+
+  $('frontResetBtn').addEventListener('click', function () {
+    ['frontUser', 'frontDevice', 'frontBrand', 'frontModel', 'frontVersion', 'frontScreen', 'frontEvent', 'frontFrom', 'frontTo', 'frontQuery'].forEach(function (k) {
+      state[k] = '';
+    });
+    $('frontSearch').value = '';
+    $('frontUser').value = '';
+    $('frontDevice').value = '';
+    $('frontBrand').value = '';
+    $('frontModel').value = '';
+    $('frontVersion').value = '';
+    $('frontScreen').value = '';
+    $('frontEvent').value = '';
+    $('frontFrom').value = '';
+    $('frontTo').value = '';
     refreshFrontLogs();
   });
 
