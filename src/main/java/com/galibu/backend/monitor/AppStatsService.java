@@ -55,6 +55,8 @@ public class AppStatsService {
         Map<String, Object> ratings = new LinkedHashMap<>();
         Map<String, Object> wallet = new LinkedHashMap<>();
         Map<String, Object> revenue = new LinkedHashMap<>();
+        Map<String, Object> funnel = new LinkedHashMap<>();
+        Map<String, Object> cohorts = new LinkedHashMap<>();
 
         try {
             Map<String, Long> roles = countBy("select role, count(*) as c from users group by role", "role", "c");
@@ -176,6 +178,51 @@ public class AppStatsService {
             revenue.put("error", ex.getMessage());
         }
 
+        try {
+            long jobsTotal = value("select count(*) from jobs");
+            long jobsWithBids = value("select count(distinct job_id) from bids");
+            long jobsWithAccepted = value("select count(distinct job_id) from bids where status = 'ACCEPTED'");
+            long jobsCompleted = value("select count(*) from jobs where status = 'COMPLETED'");
+            long jobsRated = value("select count(distinct job_id) from ratings");
+            funnel.put("jobs", List.of(
+                funnelStep("Solicitudes creadas", jobsTotal, jobsTotal),
+                funnelStep("Con al menos una oferta", jobsWithBids, jobsTotal),
+                funnelStep("Con oferta aceptada", jobsWithAccepted, jobsTotal),
+                funnelStep("Completadas", jobsCompleted, jobsTotal),
+                funnelStep("Calificadas", jobsRated, jobsTotal)));
+
+            long usersTotal = value("select count(*) from users");
+            long usersWithJob = value("select count(distinct client_id) from jobs");
+            long usersWithBid = value("select count(distinct professional_id) from bids");
+            long usersWithCompleted = value(
+                "select count(distinct professional_id) from jobs where status = 'COMPLETED' and professional_id is not null");
+            long usersWithRating = value("select count(distinct rated_id) from ratings");
+            long usersPro = value("select count(*) from users where subscription_plan = 'PRO'");
+            funnel.put("users", List.of(
+                funnelStep("Registrados", usersTotal, usersTotal),
+                funnelStep("Crearon una solicitud", usersWithJob, usersTotal),
+                funnelStep("Enviaron una oferta", usersWithBid, usersTotal),
+                funnelStep("Completaron un trabajo", usersWithCompleted, usersTotal),
+                funnelStep("Recibieron calificación", usersWithRating, usersTotal),
+                funnelStep("Tienen plan Pro", usersPro, usersTotal)));
+            funnel.put("completionRate", jobsTotal > 0 ? Math.round(jobsCompleted * 10000.0 / jobsTotal) / 100.0 : 0.0);
+            funnel.put("acceptanceRate", jobsTotal > 0 ? Math.round(jobsWithAccepted * 10000.0 / jobsTotal) / 100.0 : 0.0);
+        } catch (Exception ex) {
+            funnel.put("error", ex.getMessage());
+        }
+
+        try {
+            cohorts.put("weekly", rows(
+                "select date_format(from_unixtime(created_at / 1000), '%x-W%v') as bucket,"
+                    + " min(created_at) as first_at, count(*) as users,"
+                    + " sum(case when subscription_plan = 'PRO' then 1 else 0 end) as pro,"
+                    + " sum(case when exists (select 1 from jobs j where j.client_id = users.id) then 1 else 0 end) as with_job,"
+                    + " sum(case when exists (select 1 from bids b where b.professional_id = users.id) then 1 else 0 end) as with_bid"
+                    + " from users group by bucket order by bucket desc limit 12"));
+        } catch (Exception ex) {
+            cohorts.put("error", ex.getMessage());
+        }
+
         List<Map<String, Object>> days = usage.recentDays();
         Map<String, Object> usageOut = new LinkedHashMap<>();
         usageOut.put("today", findDay(days, today.toString()));
@@ -199,6 +246,8 @@ public class AppStatsService {
         out.put("ratings", ratings);
         out.put("wallet", wallet);
         out.put("revenue", revenue);
+        out.put("funnel", funnel);
+        out.put("cohorts", cohorts);
         out.put("usage", usageOut);
         out.put("devices", devices);
         out.put("front", frontLogs.summary());
@@ -219,6 +268,14 @@ public class AppStatsService {
             Long.class,
             from, to, from, to, from, to, from, to, from, to);
         return value == null ? 0 : value;
+    }
+
+    private static Map<String, Object> funnelStep(String label, long count, long base) {
+        Map<String, Object> step = new LinkedHashMap<>();
+        step.put("label", label);
+        step.put("count", count);
+        step.put("percent", base > 0 ? Math.round(count * 10000.0 / base) / 100.0 : 0.0);
+        return step;
     }
 
     private long countRange(String table, String column, long from, long to) {

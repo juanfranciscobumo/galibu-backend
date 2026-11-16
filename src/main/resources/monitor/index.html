@@ -610,7 +610,8 @@
     <section class="grid cols-2" id="statsPanels"></section>
     <p class="stat-note">
       “Uso API” cuenta todas las peticiones HTTP (incluido el propio envío de logs). Los días se persisten en
-      <code>api_daily_usage</code> para sobrevivir a reinicios del backend.
+      <code>api_daily_usage</code> para sobrevivir a reinicios del backend. El embudo cuenta solicitudes en cada
+      etapa; las cohortes agrupan usuarios por semana ISO de registro.
     </p>
   </div>
 
@@ -1468,6 +1469,30 @@
       '</tbody></table></div>';
   }
 
+  function funnelBars(steps, emptyText) {
+    if (!steps || !steps.length) return '<div class="empty">' + esc(emptyText || 'Sin datos.') + '</div>';
+    return '<div class="bars">' + steps.map(function (step) {
+      return '<div class="bar-row wide"><span title="' + esc(step.label) + '">' + esc(step.label) + '</span>' +
+        '<div class="bar"><i class="blue" style="width:' + Math.max(1, Number(step.percent) || 0) + '%"></i></div>' +
+        '<b title="' + esc((Number(step.percent) || 0).toFixed(1) + ' %') + '">' + fmtNum(step.count) + '</b></div>';
+    }).join('') + '</div>';
+  }
+
+  function cohortTable(rows) {
+    if (!rows || !rows.length) return '<div class="empty">Sin cohortes registradas.</div>';
+    return '<div class="table-wrap small"><table class="stats-table"><thead><tr>' +
+      '<th>Semana</th><th>Usuarios</th><th>Con solicitud</th><th>Con oferta</th><th>Pro</th>' +
+      '</tr></thead><tbody>' +
+      rows.map(function (row) {
+        return '<tr><td>' + esc(row.bucket) + '</td>' +
+          '<td class="num">' + fmtNum(row.users) + '</td>' +
+          '<td class="num">' + fmtNum(row.with_job) + '</td>' +
+          '<td class="num">' + fmtNum(row.with_bid) + '</td>' +
+          '<td class="num">' + fmtNum(row.pro) + '</td></tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+
   function usageTable(days) {
     if (!days || !days.length) return '<div class="empty">Sin datos diarios todavía.</div>';
     return '<div class="table-wrap small"><table class="stats-table"><thead><tr>' +
@@ -1489,6 +1514,8 @@
     var ratings = payload.ratings || {};
     var wallet = payload.wallet || {};
     var revenue = payload.revenue || {};
+    var funnel = payload.funnel || {};
+    var cohorts = payload.cohorts || {};
     var usage = payload.usage || {};
     var front = payload.front || {};
     var devices = payload.devices || {};
@@ -1516,7 +1543,11 @@
       statKpi('Ingresos Pro', fmtMoney(revenue.totalRevenue),
         'MRR ' + fmtMoney(revenue.mrr) + ' · ARR ' + fmtMoney(revenue.arr), revenue.totalRevenue > 0 ? 'green' : ''),
       statKpi('Suscripciones activas', fmtNum(revenue.activeSubscriptions),
-        'Conversión ' + (revenue.conversionRate || 0).toFixed(1) + ' %')
+        'Conversión ' + (revenue.conversionRate || 0).toFixed(1) + ' %'),
+      statKpi('Conversión a completadas', (funnel.completionRate || 0).toFixed(1) + ' %',
+        'Solicitudes completadas', (funnel.completionRate || 0) >= 50 ? 'green' : 'amber'),
+      statKpi('Aceptación de ofertas', (funnel.acceptanceRate || 0).toFixed(1) + ' %',
+        'Solicitudes con oferta aceptada')
     ].join('');
 
     $('statsPanels').innerHTML = [
@@ -1665,7 +1696,10 @@
             return '<tr><td>' + esc(u.device) + '</td><td class="num">' + fmtNum(u.users) + '</td></tr>';
           }).join('') +
           '</tbody></table></div>';
-      })())
+      })()),
+      statPanel('Embudo de solicitudes', funnelBars((payload.funnel || {}).jobs, 'Sin solicitudes registradas.')),
+      statPanel('Activación de usuarios', funnelBars((payload.funnel || {}).users, 'Sin usuarios registrados.')),
+      statPanel('Cohortes de registro (semanal)', cohortTable((payload.cohorts || {}).weekly))
     ].join('');
   }
 
