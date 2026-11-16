@@ -616,9 +616,9 @@
 
   <div id="panel-profile" class="tab-panel">
     <div class="searchbar">
-      <input id="profileSearch" type="search" placeholder="userId del usuario (ej. u_123)…" autocomplete="off">
+      <input id="profileSearch" type="search" placeholder="userId, email o nombre…" autocomplete="off">
       <button class="btn primary" type="button" id="profileSearchBtn">Buscar perfil</button>
-      <span class="muted tiny" id="profileHint">Cuenta, suscripción, solicitudes, ofertas, calificaciones, logs y trazas en una sola vista.</span>
+      <span class="muted tiny" id="profileHint">Busca por userId, email o nombre. Verás cuenta, suscripción, solicitudes, ofertas, calificaciones, logs y trazas.</span>
     </div>
     <div id="profileBody">
       <div class="empty">Escribe un userId y pulsa “Buscar perfil”.</div>
@@ -1611,7 +1611,7 @@
           '<th>Usuario</th><th>Plan</th><th>Monto</th><th>Estado</th><th>Vence</th>' +
           '</tr></thead><tbody>' +
           spenders.map(function (s) {
-            return '<tr><td>' + esc(s.name || s.id) + '</td><td>' + esc(s.subscription_plan) +
+            return '<tr class="profile-trace" data-profile-user="' + esc(s.id) + '"><td>' + esc(s.name || s.id) + '</td><td>' + esc(s.subscription_plan) +
               '</td><td class="num">' + fmtMoney(s.amount) + '</td>' +
               '<td><span class="status s-' + (s.status === 'ACTIVE' ? 2 : 4) + '">' + esc(s.status) + '</span></td>' +
               '<td class="num muted">' + (s.expires_at ? fmtDateTime(s.expires_at) : '—') + '</td></tr>';
@@ -1702,15 +1702,39 @@
     return '<span title="' + n + ' / 5">' + n + ' / 5</span>';
   }
 
-  function refreshProfile() {
-    var userId = $('profileSearch').value.trim();
-    if (!userId) {
-      $('profileBody').innerHTML = '<div class="empty">Escribe un userId para buscar el perfil.</div>';
+  function refreshProfile(userId) {
+    var q = userId || $('profileSearch').value.trim();
+    if (!q) {
+      $('profileBody').innerHTML = '<div class="empty">Escribe un userId, email o nombre para buscar el perfil.</div>';
       return;
     }
+    $('profileSearch').value = q;
+    state.profileLoading = true;
+    $('profileHint').textContent = 'Buscando ' + q + '…';
+    $('profileBody').innerHTML = '<div class="empty">Buscando ' + esc(q) + '…</div>';
+    if (userId) {
+      loadProfile(userId);
+      return;
+    }
+    getJSON('/api/monitor/users?q=' + encodeURIComponent(q))
+      .then(function (res) {
+        var items = listOf(res.items);
+        if (items.length === 1) {
+          loadProfile(items[0].id);
+        } else if (items.length > 1) {
+          state.profileLoading = false;
+          renderProfileCandidates(items, q);
+        } else {
+          loadProfile(q);
+        }
+      })
+      .catch(function () { loadProfile(q); });
+  }
+
+  function loadProfile(userId) {
     state.profileUserId = userId;
     state.profileLoading = true;
-    $('profileHint').textContent = 'Consultando ' + userId + '…';
+    $('profileSearch').value = userId;
     $('profileBody').innerHTML = '<div class="empty">Cargando perfil de ' + esc(userId) + '…</div>';
     getJSON('/api/monitor/user-profile/' + encodeURIComponent(userId))
       .then(function (payload) {
@@ -1722,8 +1746,25 @@
         state.profileLoading = false;
         $('profileHint').textContent = 'No se pudo consultar ' + userId;
         $('profileBody').innerHTML = '<div class="empty">No se pudo cargar el perfil de <b>' +
-          esc(userId) + '</b>. Revisa el userId o la conexión.</div>';
+          esc(userId) + '</b>. Revisa el userId, el email o la conexión.</div>';
       });
+  }
+
+  function renderProfileCandidates(items, query) {
+    var rows = items.map(function (user) {
+      return '<tr class="profile-trace" data-profile-user="' + esc(user.id) + '">' +
+        '<td>' + esc(user.name || '—') + '</td>' +
+        '<td>' + esc(user.email || '—') + '</td>' +
+        '<td>' + esc(user.role || '—') + '</td>' +
+        '<td>' + esc(user.subscription_plan || 'FREE') + '</td>' +
+        '<td>' + esc(user.id) + '</td></tr>';
+    });
+    $('profileHint').textContent = 'Selecciona un usuario de la lista.';
+    $('profileBody').innerHTML = '<article class="card"><header><h2>' +
+      fmtNum(items.length) + ' coincidencias para “' + esc(query) + '”</h2></header>' +
+      '<p class="stat-note">Haz clic en una fila para abrir su perfil 360.</p>' +
+      profileTable(['Nombre', 'Email', 'Rol', 'Plan', 'ID'], rows) +
+      '</article>';
   }
 
   function renderProfile(payload) {
@@ -2121,7 +2162,7 @@
     refreshFrontLogs();
   });
 
-  $('profileSearchBtn').addEventListener('click', refreshProfile);
+  $('profileSearchBtn').addEventListener('click', function () { refreshProfile(); });
 
   $('profileSearch').addEventListener('keydown', function (event) {
     if (event.key !== 'Enter') return;
@@ -2130,6 +2171,11 @@
   });
 
   $('profileBody').addEventListener('click', function (event) {
+    var userRow = event.target.closest('[data-profile-user]');
+    if (userRow) {
+      refreshProfile(userRow.getAttribute('data-profile-user'));
+      return;
+    }
     var traceRow = event.target.closest('[data-trace-id]');
     if (traceRow) {
       openTraceSearch(traceRow.getAttribute('data-trace-id'));
@@ -2137,6 +2183,13 @@
     }
     var link = event.target.closest('.rid-link');
     if (link) openTraceSearch(link.getAttribute('data-rid'));
+  });
+
+  $('statsPanels').addEventListener('click', function (event) {
+    var row = event.target.closest('[data-profile-user]');
+    if (!row) return;
+    switchTab('profile');
+    refreshProfile(row.getAttribute('data-profile-user'));
   });
 
   $('frontLogs').addEventListener('click', function (event) {

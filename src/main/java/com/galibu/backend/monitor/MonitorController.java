@@ -109,6 +109,20 @@ public class MonitorController {
         return appStats.snapshot();
     }
 
+    /** Busca usuarios por id, email o nombre para el buscador del perfil 360. */
+    @GetMapping("/users")
+    public Map<String, Object> users(@RequestParam(defaultValue = "") String q) {
+        String like = "%" + q.trim() + "%";
+        List<Map<String, Object>> items = jdbc.queryForList(
+            "select id, name, email, role, subscription_plan from users"
+                + " where id like ? or email like ? or name like ?"
+                + " order by created_at desc limit 20",
+            like, like, like);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("items", items);
+        return out;
+    }
+
     /**
      * Perfil 360 de un usuario: datos de cuenta, suscripción, solicitudes como
      * cliente y como profesional, ofertas, calificaciones, logs del front y
