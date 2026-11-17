@@ -394,6 +394,7 @@
     <button type="button" class="tab-btn" data-tab="profile">Perfil 360</button>
     <button type="button" class="tab-btn" data-tab="alerts" id="alertsTabBtn">Alertas</button>
     <button type="button" class="tab-btn" data-tab="config">Configuración</button>
+    <button type="button" class="tab-btn" data-tab="tests">Tests</button>
   </nav>
 
   <div id="panel-overview" class="tab-panel active">
@@ -729,7 +730,27 @@
       </article>
     </section>
   </div>
-  <p class="foot">Galibu v1.0.0 · monitor interno · solo se contabiliza el tráfico de <code>/api/**</code>; el dashboard y los escaneos externos se excluyen</p>
+  <div id="panel-tests" class="tab-panel">
+    <div class="stats-kpis" id="testKpis"><div class="empty">Cargando reporte de tests…</div></div>
+    <section class="grid cols-2">
+      <article class="card" style="grid-column: 1 / -1">
+        <header>
+          <h2>Tests de backend (JUnit)</h2>
+          <span class="muted tiny" id="testSummary">—</span>
+        </header>
+        <div id="testList"><div class="empty">Cargando…</div></div>
+      </article>
+      <article class="card" style="grid-column: 1 / -1">
+        <header>
+          <h2>Tests de frontend</h2>
+          <span class="muted tiny">El frontend (Kotlin/Android) tiene tests en el repositorio Galibu-FE.</span>
+        </header>
+        <div id="frontendTestList"><div class="empty">Los tests del frontend se ejecutan en el repositorio Galibu-FE (core/client/professional). No se despliegan en este backend.</div></div>
+      </article>
+    </section>
+  </div>
+
+  <p class="foot" id="footLabel">Galibu v1.0.0 · monitor interno</p>
 </main>
 
 <script>
@@ -770,6 +791,7 @@
     profileLoading: false,
     alertsLoaded: false,
     configLoaded: false,
+    testsLoaded: false,
     stats: null
   };
 
@@ -2274,6 +2296,67 @@
     drawSpark($('mhPool'), poolVals);
   }
 
+  function refreshTests() {
+    if (state.paused) return;
+    getJSON('/api/monitor/tests').then(renderTests).catch(function () {
+      $('testList').innerHTML = '<div class="empty">No se pudo cargar el reporte de tests.</div>';
+    });
+  }
+
+  function renderTests(payload) {
+    state.testsLoaded = true;
+    if (!payload.available) {
+      $('testKpis').innerHTML = '<div class="empty">' + esc(payload.message || 'Sin reporte.') + '</div>';
+      $('testSummary').textContent = 'Sin reporte';
+      $('testList').innerHTML = '<div class="empty">Ejecuta los tests en el build para generar el reporte.</div>';
+      return;
+    }
+    $('testSummary').textContent = payload.status + ' · ' + fmtNum(payload.tests) + ' tests · ' +
+      fmtNum(payload.failures) + ' fallos · ' + fmtNum(payload.errors) + ' errores · ' + fmtNum(payload.skipped) + ' omitidos';
+    $('testKpis').innerHTML = [
+      statKpi('Tests', fmtNum(payload.tests), 'Ejecutados', payload.status === 'PASSED' ? 'green' : 'red'),
+      statKpi('Exitosos', fmtNum(payload.passed), 'OK', 'green'),
+      statKpi('Fallos', fmtNum(payload.failures), 'Revisar', (payload.failures || 0) > 0 ? 'red' : ''),
+      statKpi('Omitidos', fmtNum(payload.skipped), 'Skipped', '')
+    ].join('');
+    var classes = payload.classes || [];
+    if (!classes.length) {
+      $('testList').innerHTML = '<div class="empty">Sin clases de test reportadas.</div>';
+      return;
+    }
+    $('testList').innerHTML = '<div class="table-wrap small"><table class="stats-table"><thead><tr>' +
+      '<th>Clase</th><th>Tests</th><th>OK</th><th>Fallos</th><th>Errores</th><th>Tiempo</th><th>Estado</th>' +
+      '</tr></thead><tbody>' +
+      classes.map(function (c) {
+        var ok = (c.tests || 0) - (c.failures || 0) - (c.errors || 0) - (c.skipped || 0);
+        var cls = c.status === 'PASSED' ? 'severity-info' : 'severity-critical';
+        return '<tr><td><code>' + esc(c.name) + '</code></td>' +
+          '<td class="num">' + fmtNum(c.tests) + '</td>' +
+          '<td class="num">' + fmtNum(ok) + '</td>' +
+          '<td class="num">' + fmtNum(c.failures) + '</td>' +
+          '<td class="num">' + fmtNum(c.errors) + '</td>' +
+          '<td class="num">' + Number(c.time || 0).toFixed(2) + 's</td>' +
+          '<td class="' + cls + '">' + esc(c.status) + '</td></tr>';
+      }).join('') +
+      '</tbody></table></div>' +
+      '<p class="stat-note">Tiempo total: ' + Number(payload.time || 0).toFixed(2) + ' s · ' + fmtNum(payload.files) + ' archivos XML.</p>';
+  }
+
+  function loadFooterVersion() {
+    if (window.__footerVersionLoaded) return;
+    window.__footerVersionLoaded = true;
+    getJSON('/api/monitor/config').then(function (payload) {
+      var version = '1.0.0';
+      var slogan = 'Servicios que conectan, soluciones que llegan.';
+      (payload.items || []).forEach(function (item) {
+        if (item.config_key === 'app.version') version = item.config_value;
+        if (item.config_key === 'app.slogan') slogan = item.config_value;
+      });
+      var foot = $('footLabel');
+      if (foot) foot.textContent = 'Galibu v' + version + ' · monitor interno · ' + slogan;
+    }).catch(function () {});
+  }
+
   function switchTab(tab) {
     state.tab = tab;
     Array.prototype.forEach.call(document.querySelectorAll('.tab-btn'), function (button) {
@@ -2291,6 +2374,7 @@
     if (tab === 'stats') refreshStats();
     if (tab === 'alerts') refreshAlerts();
     if (tab === 'config') refreshConfig();
+    if (tab === 'tests') refreshTests();
     if (tab === 'profile' && state.profileUserId && !$('profileSearch').value) {
       $('profileSearch').value = state.profileUserId;
     }
@@ -2338,6 +2422,8 @@
     if (state.tab === 'stats' && state.ticks % 3 === 0) refreshStats();
     if (state.tab === 'alerts' && state.ticks % 5 === 0) refreshAlerts();
     if (state.tab === 'config' && state.ticks % 5 === 0) refreshConfig();
+    if (state.tab === 'tests' && state.ticks % 10 === 0) refreshTests();
+    if (state.ticks === 1) loadFooterVersion();
   }
 
   // Eventos

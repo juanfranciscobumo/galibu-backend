@@ -37,6 +37,7 @@ public class MonitorController {
     private final AlertService alerts;
     private final MetricsHistoryStore metricsHistory;
     private final AppConfigService config;
+    private final TestReportService testReport;
 
     public MonitorController(
         RequestMetrics metrics,
@@ -50,7 +51,8 @@ public class MonitorController {
         JdbcTemplate jdbc,
         AlertService alerts,
         MetricsHistoryStore metricsHistory,
-        AppConfigService config
+        AppConfigService config,
+        TestReportService testReport
     ) {
         this.metrics = metrics;
         this.jvm = jvm;
@@ -64,6 +66,7 @@ public class MonitorController {
         this.alerts = alerts;
         this.metricsHistory = metricsHistory;
         this.config = config;
+        this.testReport = testReport;
     }
 
     @GetMapping("/data")
@@ -280,6 +283,11 @@ public class MonitorController {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("items", config.audit(limit));
         return out;
+    }
+
+    @GetMapping("/tests")
+    public Map<String, Object> tests() {
+        return testReport.summary();
     }
     /**
      * Agrega al listado de métricas las rutas registradas que todavía no han
