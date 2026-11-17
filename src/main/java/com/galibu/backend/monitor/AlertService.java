@@ -58,6 +58,16 @@ public class AlertService {
     public Map<String, Object> current() {
         MetricsSnapshot snapshot = capture();
         List<Map<String, Object>> active = evaluate(snapshot);
+        // Adjunta el id del evento abierto en base de datos para permitir
+        // reconocer la alerta desde el monitor.
+        Map<String, Long> openIds = loadOpenEventIds();
+        for (Map<String, Object> alert : active) {
+            String key = String.valueOf(alert.get("key"));
+            Long id = openIds.get(key);
+            if (id != null) {
+                alert.put("id", id);
+            }
+        }
         return buildResult(snapshot, active, System.currentTimeMillis());
     }
 
@@ -481,6 +491,25 @@ public class AlertService {
         out.put("frontErrorsWarning", config.getDouble("alert.frontErrors.warning", 50.0));
         out.put("frontErrorsCritical", config.getDouble("alert.frontErrors.critical", 200.0));
         out.put("jobsWithoutBidsWarning", config.getDouble("alert.jobsWithoutBids.warning", 1.0));
+        return out;
+    }
+
+    private Map<String, Long> loadOpenEventIds() {
+        Map<String, Long> out = new LinkedHashMap<>();
+        try {
+            List<Map<String, Object>> rows = jdbc.queryForList(
+                "select e.alert_key, e.id from alert_events e"
+                    + " join (select alert_key, max(id) id from alert_events group by alert_key) m"
+                    + " on m.id = e.id where e.status = 'OPEN'");
+            for (Map<String, Object> row : rows) {
+                Object key = row.get("alert_key");
+                Object id = row.get("id");
+                if (key != null && id instanceof Number n) {
+                    out.put(String.valueOf(key), n.longValue());
+                }
+            }
+        } catch (Exception ignored) {
+        }
         return out;
     }
 
