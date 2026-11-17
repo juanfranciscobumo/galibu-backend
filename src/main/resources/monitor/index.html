@@ -309,6 +309,20 @@
   .stats-table td:first-child { color: var(--muted); }
   .trace-meta .err { color: #FCA5A5; }
   .stat-note { color: var(--muted-2); font-size: 10.5px; margin: 8px 0 0; }
+  .chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .chart-card { background: #0A1322; border: 1px solid var(--border-soft); border-radius: 10px; padding: 8px 9px; }
+  .chart-label { display: block; font-size: 9.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 2px; }
+  .severity-critical { color: #FCA5A5; }
+  .severity-warning { color: #FCD34D; }
+  .severity-info { color: #93C5FD; }
+  .alert-card { border: 1px solid var(--border-soft); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #0A1322; }
+  .alert-card.critical { border-color: rgba(239, 68, 68, .45); background: rgba(239, 68, 68, .06); }
+  .alert-card.warning { border-color: rgba(245, 158, 11, .45); background: rgba(245, 158, 11, .06); }
+  .alert-card.info { border-color: rgba(59, 130, 246, .45); background: rgba(59, 130, 246, .06); }
+  .alert-card .alert-title { font-weight: 700; font-size: 12.5px; margin: 0 0 3px; }
+  .alert-card .alert-detail { color: var(--muted); font-size: 11px; margin: 0 0 6px; }
+  .alert-card .alert-meta { color: var(--muted-2); font-size: 10px; font-family: var(--mono); }
+  .alert-card .alert-actions { margin-top: 6px; }
 
   /* Perfil 360 */
   .profile-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
@@ -368,6 +382,7 @@
     <button type="button" class="tab-btn" data-tab="front">Logs front</button>
     <button type="button" class="tab-btn" data-tab="stats">Estadísticas</button>
     <button type="button" class="tab-btn" data-tab="profile">Perfil 360</button>
+    <button type="button" class="tab-btn" data-tab="alerts" id="alertsTabBtn">Alertas</button>
   </nav>
 
   <div id="panel-overview" class="tab-panel active">
@@ -622,8 +637,58 @@
       <span class="muted tiny" id="profileHint">Busca por userId, email o nombre. Verás cuenta, suscripción, solicitudes, ofertas, calificaciones, logs y trazas.</span>
     </div>
     <div id="profileBody">
-      <div class="empty">Escribe un userId y pulsa “Buscar perfil”.</div>
+      <div class="empty">Escribe un userId, email o nombre y pulsa “Buscar perfil”.</div>
     </div>
+  </div>
+
+  <div id="panel-alerts" class="tab-panel">
+    <div class="stats-kpis" id="alertKpis"><div class="empty">Cargando alertas…</div></div>
+    <section class="grid cols-2">
+      <article class="card">
+        <header>
+          <h2>Alertas activas</h2>
+          <span class="muted tiny" id="alertSummary">—</span>
+        </header>
+        <div id="alertList"><div class="empty">Sin alertas activas.</div></div>
+      </article>
+      <article class="card">
+        <header>
+          <h2>Histórico de métricas</h2>
+          <span class="muted tiny">Últimas 24 h</span>
+        </header>
+        <div class="chart-grid">
+          <div class="chart-card">
+            <span class="chart-label">Error % (5 min)</span>
+            <canvas id="mhErrors" class="chart mini"></canvas>
+          </div>
+          <div class="chart-card">
+            <span class="chart-label">Latencia p95 (ms)</span>
+            <canvas id="mhLatency" class="chart mini"></canvas>
+          </div>
+          <div class="chart-card">
+            <span class="chart-label">Heap %</span>
+            <canvas id="mhHeap" class="chart mini"></canvas>
+          </div>
+          <div class="chart-card">
+            <span class="chart-label">Pool BD %</span>
+            <canvas id="mhPool" class="chart mini"></canvas>
+          </div>
+        </div>
+        <div class="table-wrap small" style="margin-top:10px">
+          <table class="stats-table" id="metricsHistoryTable">
+            <thead><tr><th>Hora</th><th>Req</th><th>Err</th><th>Err %</th><th>Avg</th><th>p95</th><th>Heap</th><th>Pool</th></tr></thead>
+            <tbody><tr><td colspan="8"><div class="empty">Cargando…</div></td></tr></tbody>
+          </table>
+        </div>
+      </article>
+      <article class="card" style="grid-column: 1 / -1">
+        <header>
+          <h2>Historial de alertas</h2>
+          <span class="muted tiny" id="alertHistorySummary">—</span>
+        </header>
+        <div id="alertHistory"><div class="empty">Sin eventos registrados.</div></div>
+      </article>
+    </section>
   </div>
 
   <p class="foot">Galibu v1.0.0 · monitor interno · solo se contabiliza el tráfico de <code>/api/**</code>; el dashboard y los escaneos externos se excluyen</p>
@@ -665,6 +730,7 @@
     profileUserId: '',
     profileData: null,
     profileLoading: false,
+    alertsLoaded: false,
     stats: null
   };
 
@@ -1988,6 +2054,116 @@
     $('profileBody').innerHTML = html;
   }
 
+  function refreshAlerts() {
+    if (state.paused) return;
+    getJSON('/api/monitor/alerts').then(renderAlerts).catch(function () {
+      $('alertKpis').innerHTML = '<div class="empty">No se pudieron cargar las alertas.</div>';
+    });
+    getJSON('/api/monitor/alerts/history?limit=60').then(renderAlertHistory).catch(function () { /* sin alertas previas */ });
+    getJSON('/api/monitor/metrics-history?hours=24').then(renderMetricsHistory).catch(function () { /* sin histórico */ });
+  }
+
+  function renderAlerts(payload) {
+    var counts = payload.counts || {};
+    var active = payload.active || [];
+    var evaluatedAt = payload.evaluatedAt || payload.generatedAt;
+    var total = counts.total || active.length;
+    $('alertSummary').textContent = fmtNum(total) + ' activas · evaluadas ' + fmtClock(evaluatedAt);
+    $('alertKpis').innerHTML = [
+      statKpi('Críticas', fmtNum(counts.critical || 0), 'Requieren atención', (counts.critical || 0) > 0 ? 'red' : ''),
+      statKpi('Advertencias', fmtNum(counts.warning || 0), 'Revisar pronto', (counts.warning || 0) > 0 ? 'amber' : ''),
+      statKpi('Informativas', fmtNum(counts.info || 0), 'Contexto', ''),
+      statKpi('Evaluadas', fmtNum(total), 'Umbrales activos')
+    ].join('');
+
+    var tabBtn = $('alertsTabBtn');
+    if (tabBtn) {
+      tabBtn.textContent = 'Alertas' + (total > 0 ? ' (' + total + ')' : '');
+    }
+
+    if (!active.length) {
+      $('alertList').innerHTML = '<div class="empty">Sin alertas activas. El backend está dentro de los umbrales configurados.</div>';
+      return;
+    }
+    $('alertList').innerHTML = active.map(function (alert) {
+      var severity = String(alert.severity || 'INFO').toLowerCase();
+      var cardClass = severity === 'critical' ? 'critical' : (severity === 'warning' ? 'warning' : 'info');
+      var ackButton = alert.id
+        ? '<button class="btn small" type="button" data-ack-id="' + esc(alert.id) + '">Reconocer</button>'
+        : '';
+      return '<div class="alert-card ' + cardClass + '">' +
+        '<p class="alert-title">' + esc(alert.title) + '</p>' +
+        '<p class="alert-detail">' + esc(alert.detail) + '</p>' +
+        '<div class="alert-meta">' +
+          'Severidad: ' + esc(String(alert.severity || '').toUpperCase()) +
+          ' · Valor: ' + esc(alert.value) + ' ' + esc(alert.unit || '') +
+          ' · Umbral: ' + esc(alert.threshold) +
+        '</div>' +
+        (ackButton ? '<div class="alert-actions">' + ackButton + '</div>' : '') +
+      '</div>';
+    }).join('');
+  }
+
+  function renderAlertHistory(payload) {
+    var items = payload.items || [];
+    $('alertHistorySummary').textContent = fmtNum(items.length) + ' eventos';
+    if (!items.length) {
+      $('alertHistory').innerHTML = '<div class="empty">Sin eventos registrados.</div>';
+      return;
+    }
+    $('alertHistory').innerHTML = '<div class="table-wrap small"><table class="stats-table"><thead><tr>' +
+      '<th>Fecha</th><th>Alerta</th><th>Severidad</th><th>Estado</th><th>Detalle</th>' +
+      '</tr></thead><tbody>' +
+      items.map(function (item) {
+        var severity = String(item.severity || '').toUpperCase();
+        var cls = severity === 'CRITICAL' ? 'severity-critical' : (severity === 'WARNING' ? 'severity-warning' : 'severity-info');
+        return '<tr><td class="num">' + fmtClock(item.created_at) + '</td>' +
+          '<td>' + esc(item.title) + '</td>' +
+          '<td class="' + cls + '">' + esc(severity) + '</td>' +
+          '<td>' + esc(item.status) + (item.acknowledged_at ? ' · ack' : '') + '</td>' +
+          '<td class="muted">' + esc(item.detail) + '</td></tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+
+  function renderMetricsHistory(payload) {
+    var items = payload.items || [];
+    var ordered = items.slice().reverse();
+    var rows = items.slice(0, 30);
+    var tbody = $('metricsHistoryTable').querySelector('tbody');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Sin datos todavía.</div></td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(function (row) {
+        var heapPct = row.heap_max > 0 ? (row.heap_used * 100 / row.heap_max) : 0;
+        var poolPct = row.db_pool_total > 0 ? (row.db_pool_active * 100 / row.db_pool_total) : 0;
+        return '<tr><td class="num">' + fmtClock(row.captured_at) + '</td>' +
+          '<td class="num">' + fmtNum(row.requests) + '</td>' +
+          '<td class="num">' + fmtNum(row.errors) + '</td>' +
+          '<td class="num">' + Number(row.error_rate || 0).toFixed(1) + '</td>' +
+          '<td class="num">' + Number(row.avg_ms || 0).toFixed(0) + '</td>' +
+          '<td class="num">' + Number(row.p95_ms || 0).toFixed(0) + '</td>' +
+          '<td class="num">' + heapPct.toFixed(0) + '%</td>' +
+          '<td class="num">' + poolPct.toFixed(0) + '%</td></tr>';
+      }).join('');
+    }
+
+    var errVals = ordered.map(function (r) { return Math.min(100, Number(r.error_rate) || 0); });
+    var p95Raw = ordered.map(function (r) { return Number(r.p95_ms) || 0; });
+    var p95Max = Math.max.apply(null, p95Raw.concat([1]));
+    var p95Vals = p95Raw.map(function (v) { return (v / p95Max) * 100; });
+    var heapVals = ordered.map(function (r) {
+      return r.heap_max > 0 ? (r.heap_used * 100 / r.heap_max) : 0;
+    });
+    var poolVals = ordered.map(function (r) {
+      return r.db_pool_total > 0 ? (r.db_pool_active * 100 / r.db_pool_total) : 0;
+    });
+    drawSpark($('mhErrors'), errVals);
+    drawSpark($('mhLatency'), p95Vals);
+    drawSpark($('mhHeap'), heapVals);
+    drawSpark($('mhPool'), poolVals);
+  }
+
   function switchTab(tab) {
     state.tab = tab;
     Array.prototype.forEach.call(document.querySelectorAll('.tab-btn'), function (button) {
@@ -2003,6 +2179,7 @@
     if (tab === 'traces') refreshTraces();
     if (tab === 'front') refreshFrontLogs();
     if (tab === 'stats') refreshStats();
+    if (tab === 'alerts') refreshAlerts();
     if (tab === 'profile' && state.profileUserId && !$('profileSearch').value) {
       $('profileSearch').value = state.profileUserId;
     }
@@ -2048,6 +2225,7 @@
     if (state.tab === 'traces' && state.ticks % 3 === 0) refreshTraces();
     if (state.tab === 'front' && state.ticks % 2 === 0) refreshFrontLogs();
     if (state.tab === 'stats' && state.ticks % 3 === 0) refreshStats();
+    if (state.tab === 'alerts' && state.ticks % 5 === 0) refreshAlerts();
   }
 
   // Eventos
@@ -2217,6 +2395,16 @@
     }
     var link = event.target.closest('.rid-link');
     if (link) openTraceSearch(link.getAttribute('data-rid'));
+  });
+
+  $('alertList').addEventListener('click', function (event) {
+    var button = event.target.closest('[data-ack-id]');
+    if (!button) return;
+    var id = button.getAttribute('data-ack-id');
+    if (!id) return;
+    fetch('/api/monitor/alerts/' + encodeURIComponent(id) + '/ack', { method: 'POST' })
+      .then(function () { refreshAlerts(); })
+      .catch(function () { /* se reintenta en el próximo tick */ });
   });
 
   $('statsPanels').addEventListener('click', function (event) {

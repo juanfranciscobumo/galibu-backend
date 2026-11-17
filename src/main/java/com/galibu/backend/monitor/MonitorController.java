@@ -32,6 +32,8 @@ public class MonitorController {
     private final FrontLogStore frontLogs;
     private final AppStatsService appStats;
     private final JdbcTemplate jdbc;
+    private final AlertService alerts;
+    private final MetricsHistoryStore metricsHistory;
 
     public MonitorController(
         RequestMetrics metrics,
@@ -42,7 +44,9 @@ public class MonitorController {
         RequestTraceStore traces,
         FrontLogStore frontLogs,
         AppStatsService appStats,
-        JdbcTemplate jdbc
+        JdbcTemplate jdbc,
+        AlertService alerts,
+        MetricsHistoryStore metricsHistory
     ) {
         this.metrics = metrics;
         this.jvm = jvm;
@@ -53,6 +57,8 @@ public class MonitorController {
         this.frontLogs = frontLogs;
         this.appStats = appStats;
         this.jdbc = jdbc;
+        this.alerts = alerts;
+        this.metricsHistory = metricsHistory;
     }
 
     @GetMapping("/data")
@@ -227,6 +233,32 @@ public class MonitorController {
         return out;
     }
 
+    @GetMapping("/alerts")
+    public Map<String, Object> alerts() {
+        return alerts.current();
+    }
+
+    @PostMapping("/alerts/{id}/ack")
+    public Map<String, Object> acknowledgeAlert(@PathVariable long id) {
+        alerts.acknowledge(id);
+        return Map.of("ok", true, "id", id);
+    }
+
+    @GetMapping("/alerts/history")
+    public Map<String, Object> alertHistory(@RequestParam(defaultValue = "100") int limit) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("items", alerts.history(limit));
+        return out;
+    }
+
+    @GetMapping("/metrics-history")
+    public Map<String, Object> metricsHistory(@RequestParam(defaultValue = "24") int hours) {
+        int window = Math.max(1, Math.min(hours, 168));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("hours", window);
+        out.put("items", metricsHistory.recent(window));
+        return out;
+    }
     /**
      * Agrega al listado de métricas las rutas registradas que todavía no han
      * recibido tráfico, para poder ver la cobertura completa de la API.

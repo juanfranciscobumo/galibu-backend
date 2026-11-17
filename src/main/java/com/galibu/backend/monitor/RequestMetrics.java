@@ -113,17 +113,18 @@ public class RequestMetrics {
 
         long second = now / 1000;
         long minute = now / 60_000;
+        boolean serverError = status >= 500;
         synchronized (bucketLock) {
             Bucket sec = seconds[(int) (second % SECONDS_WINDOW)];
             if (sec.index != second) {
                 sec.reset(second);
             }
-            sec.add(ms, error);
+            sec.add(ms, error, serverError);
             Bucket min = minutes[(int) (minute % MINUTES_WINDOW)];
             if (min.index != minute) {
                 min.reset(minute);
             }
-            min.add(ms, error);
+            min.add(ms, error, serverError);
         }
 
         synchronized (recent) {
@@ -172,6 +173,50 @@ public class RequestMetrics {
     /** Rutas que pertenecen a la API de negocio. */
     public static boolean isApiPath(String path) {
         return path != null && (path.equals("/api") || path.startsWith("/api/"));
+    }
+
+    /** Ventana móvil de los últimos N minutos (máx. 120) con tasa de error y 5xx. */
+    public Map<String, Object> window(int windowMinutes) {
+        int window = Math.max(1, Math.min(windowMinutes, MINUTES_WINDOW));
+        long now = System.currentTimeMillis();
+        long current = now / 60_000;
+        long count = 0;
+        long errors = 0;
+        long serverErrors = 0;
+        long sumMs = 0;
+        long maxMs = 0;
+        synchronized (bucketLock) {
+            for (int i = 0; i < window; i++) {
+                long index = current - i;
+                Bucket bucket = minutes[(int) (index % MINUTES_WINDOW)];
+                if (bucket.index != index) {
+                    continue;
+                }
+                count += bucket.count;
+                errors += bucket.errors;
+                serverErrors += bucket.serverErrors;
+                sumMs += bucket.sumMs;
+                if (bucket.maxMs > maxMs) {
+                    maxMs = bucket.maxMs;
+                }
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("minutes", window);
+        out.put("requests", count);
+        out.put("errors", errors);
+        out.put("serverErrors", serverErrors);
+        out.put("errorRate", count == 0 ? 0.0 : round(errors * 100.0 / count));
+        out.put("serverErrorRate", count == 0 ? 0.0 : round(serverErrors * 100.0 / count));
+        out.put("avgMs", count == 0 ? 0.0 : round(sumMs * 1.0 / count));
+        out.put("maxMs", maxMs);
+        out.put("p95Ms", globalSamples.percentile(95));
+        return out;
+    }
+
+    /** Total de peticiones externas (escaneos y bots) desde el arranque. */
+    public long externalTotal() {
+        return externalTotal.get();
     }
 
     public Map<String, Object> snapshot() {
@@ -502,6 +547,7 @@ public class RequestMetrics {
         private long index = -1;
         private long count;
         private long errors;
+        private long serverErrors;
         private long sumMs;
         private long maxMs;
 
@@ -509,15 +555,19 @@ public class RequestMetrics {
             this.index = index;
             this.count = 0;
             this.errors = 0;
+            this.serverErrors = 0;
             this.sumMs = 0;
             this.maxMs = 0;
         }
 
-        private void add(long ms, boolean error) {
+        private void add(long ms, boolean error, boolean serverError) {
             count++;
             sumMs += ms;
             if (error) {
                 errors++;
+            }
+            if (serverError) {
+                serverErrors++;
             }
             if (ms > maxMs) {
                 maxMs = ms;
