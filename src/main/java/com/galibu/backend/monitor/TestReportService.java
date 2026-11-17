@@ -54,9 +54,13 @@ public class TestReportService {
         double totalTime = 0.0;
         List<Map<String, Object>> classes = new ArrayList<>();
 
-        File[] xmlFiles = dir.toFile().listFiles((d, name) -> name.endsWith(".xml"));
-        if (xmlFiles == null) {
-            xmlFiles = new File[0];
+        List<File> xmlFiles = new ArrayList<>();
+        try {
+            Files.walk(dir)
+                .filter(Files::isRegularFile)
+                .filter(p -> p.getFileName().toString().endsWith(".xml"))
+                .forEach(p -> xmlFiles.add(p.toFile()));
+        } catch (Exception ignored) {
         }
         for (File file : xmlFiles) {
             try {
@@ -108,7 +112,7 @@ public class TestReportService {
         classes.sort(Comparator.comparing(m -> String.valueOf(m.get("name"))));
 
         out.put("available", true);
-        out.put("files", xmlFiles.length);
+        out.put("files", xmlFiles.size());
         out.put("tests", totalTests);
         out.put("failures", totalFailures);
         out.put("errors", totalErrors);
