@@ -2,7 +2,6 @@ package com.galibu.backend.users;
 
 import com.galibu.backend.common.TextUtils;
 import com.galibu.backend.auth.dto.UserDto;
-import com.galibu.backend.bids.BidRepository;
 import com.galibu.backend.jobs.JobRepository;
 import com.galibu.backend.ratings.RatingRepository;
 import com.galibu.backend.users.dto.PublicUserDto;
@@ -25,7 +24,6 @@ public class UserService {
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
     private final JobRepository jobs;
-    private final BidRepository bids;
     private final RatingRepository ratings;
     private final WalletTransactionRepository walletTransactions;
 
@@ -33,14 +31,12 @@ public class UserService {
         UserRepository users,
         PasswordEncoder passwordEncoder,
         JobRepository jobs,
-        BidRepository bids,
         RatingRepository ratings,
         WalletTransactionRepository walletTransactions
     ) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.jobs = jobs;
-        this.bids = bids;
         this.ratings = ratings;
         this.walletTransactions = walletTransactions;
     }
@@ -150,7 +146,6 @@ public class UserService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Tienes solicitudes activas");
         }
         jobs.deleteAllForUser(uid);
-        bids.deleteAllForUser(uid);
         ratings.deleteAllForUser(uid);
         walletTransactions.deleteAllForUser(uid);
         users.delete(user);

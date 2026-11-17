@@ -183,16 +183,6 @@ public class MonitorController {
         }
 
         try {
-            List<Map<String, Object>> bids = jdbc.queryForList(
-                "select b.id, b.job_id, j.title as job_title, b.amount, b.status, b.quote_type, b.counter_round, b.visit_required, b.created_at"
-                    + " from bids b join jobs j on j.id = b.job_id where b.professional_id = ? order by b.created_at desc limit 20",
-                userId);
-            out.put("bids", bids);
-        } catch (Exception ex) {
-            out.put("bids", List.of(Map.of("error", ex.getMessage())));
-        }
-
-        try {
             List<Map<String, Object>> ratingsGiven = jdbc.queryForList(
                 "select id, job_id, rated_id, stars, comment, created_at from ratings where rater_id = ? order by created_at desc limit 20",
                 userId);

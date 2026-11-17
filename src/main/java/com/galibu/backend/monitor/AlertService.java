@@ -342,7 +342,7 @@ public class AlertService {
         long jobsWithoutBids = queryLong(
             "select count(*) from jobs j where j.status not in ('COMPLETED', 'CANCELLED')"
                 + " and j.created_at < ?"
-                + " and not exists (select 1 from bids b where b.job_id = j.id)",
+                + " and (j.professional_id is null or j.professional_id = '')",
             System.currentTimeMillis() - 86_400_000L);
 
         long windowRequests = longFrom(window, "requests");

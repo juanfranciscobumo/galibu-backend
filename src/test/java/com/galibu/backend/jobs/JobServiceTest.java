@@ -8,10 +8,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.galibu.backend.bids.Bid;
-import com.galibu.backend.bids.BidEventRepository;
-import com.galibu.backend.bids.BidRepository;
-import com.galibu.backend.bids.dto.BidDto;
 import com.galibu.backend.ratings.RatingService;
 import com.galibu.backend.jobs.dto.CreateJobRequest;
 import com.galibu.backend.jobs.dto.JobDto;
@@ -36,12 +32,6 @@ class JobServiceTest {
 
     @Mock
     private UserRepository users;
-
-    @Mock
-    private BidRepository bids;
-
-    @Mock
-    private BidEventRepository bidEvents;
 
     @Mock
     private RatingService ratingService;
@@ -172,117 +162,9 @@ class JobServiceTest {
             org.mockito.ArgumentMatchers.contains("no era lo acordado"));
     }
 
-    @Test
-    void proposePriceCreatesBidWhenNoneExists() {
-        Job j = job("j1");
-        j.setStatus("NEGOTIATING");
-        j.setProfessionalId("pro-1");
-        when(jobs.findById("j1")).thenReturn(Optional.of(j));
-        User pro = client("pro-1");
-        pro.setName("Pro");
-        when(users.findById("pro-1")).thenReturn(Optional.of(pro));
-        when(bids.findAllByJobIdAndProfessionalId("j1", "pro-1")).thenReturn(List.of());
-        when(bids.save(any(Bid.class))).thenAnswer(i -> {
-            Bid b = i.getArgument(0);
-            b.setId("bid_j1_pro-1");
-            return b;
-        });
-        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
 
-        BidDto proposed = service.proposePrice("client-1", "j1", 90000.0);
 
-        assertEquals("bid_j1_pro-1", proposed.getId());
-        assertEquals("j1", proposed.getJobId());
-        assertEquals("pro-1", proposed.getProfessionalId());
-        assertEquals(90000.0, proposed.getAmount(), 0.01);
-        // El cliente propone sobre la oferta del profesional: él puede aceptarla.
-        assertEquals("COUNTERED_BY_CLIENT", proposed.getStatus());
-        verify(chat).postSystemMessage(eq("j1"), eq("Sistema"),
-            org.mockito.ArgumentMatchers.contains("90000"));
-    }
 
-    @Test
-    void proposePriceGuardsNonParticipantAndClosedJob() {
-        Job j = job("j1");
-        j.setStatus("ACCEPTED");
-        j.setProfessionalId("pro-1");
-        when(jobs.findById("j1")).thenReturn(Optional.of(j));
-
-        ResponseStatusException closed = assertThrows(ResponseStatusException.class,
-            () -> service.proposePrice("client-1", "j1", 90000.0));
-        assertEquals(HttpStatus.CONFLICT, closed.getStatusCode());
-
-        Job j2 = job("j2");
-        j2.setStatus("NEGOTIATING");
-        j2.setClientId("client-9");
-        j2.setProfessionalId("pro-9");
-        when(jobs.findById("j2")).thenReturn(Optional.of(j2));
-
-        ResponseStatusException forbidden = assertThrows(ResponseStatusException.class,
-            () -> service.proposePrice("client-1", "j2", 90000.0));
-        assertEquals(HttpStatus.FORBIDDEN, forbidden.getStatusCode());
-    }
-
-    @Test
-    void proposePriceOnExistingBidStartsNewRoundAndKeepsQuoteDetails() {
-        Job j = job("j1");
-        j.setStatus("NEGOTIATING");
-        j.setProfessionalId("pro-1");
-        when(jobs.findById("j1")).thenReturn(Optional.of(j));
-        User pro = client("pro-1");
-        pro.setName("Pro");
-        when(users.findById("pro-1")).thenReturn(Optional.of(pro));
-        Bid existing = new Bid();
-        existing.setId("bid_j1_pro-1");
-        existing.setJobId("j1");
-        existing.setProfessionalId("pro-1");
-        existing.setProfessionalName("Pro");
-        existing.setAmount(100000.0);
-        existing.setStatus("COUNTERED_BY_PROFESSIONAL");
-        existing.setQuoteType("AFTER_VISIT");
-        existing.setVisitRequired(true);
-        existing.setVisitFee(15000.0);
-        existing.setVisitScheduledAt(1_800_000_000_000L);
-        existing.setMaterialsIncluded(true);
-        existing.setMaterialsCost(20000.0);
-        existing.setCounterRound(0);
-        when(bids.findAllByJobIdAndProfessionalId("j1", "pro-1"))
-            .thenReturn(List.of(existing));
-        when(bids.save(any(Bid.class))).thenAnswer(i -> i.getArgument(0));
-        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
-
-        BidDto proposed = service.proposePrice("client-1", "j1", 90000.0);
-
-        assertEquals(1, proposed.getCounterRound());
-        assertEquals("COUNTERED_BY_CLIENT", proposed.getStatus());
-        assertEquals("AFTER_VISIT", proposed.getQuoteType());
-        assertTrue(proposed.isVisitRequired());
-        assertEquals(15000.0, proposed.getVisitFee());
-        assertEquals(1_800_000_000_000L, proposed.getVisitScheduledAt());
-        assertTrue(proposed.isMaterialsIncluded());
-        assertEquals(20000.0, proposed.getMaterialsCost());
-    }
-
-    @Test
-    void proposePriceByProfessionalUpdatesOwnBid() {
-        Job j = job("j1");
-        j.setStatus("NEGOTIATING");
-        j.setProfessionalId("pro-1");
-        when(jobs.findById("j1")).thenReturn(Optional.of(j));
-        User pro = client("pro-1");
-        pro.setName("Pro");
-        when(users.findById("pro-1")).thenReturn(Optional.of(pro));
-        when(bids.findAllByJobIdAndProfessionalId("j1", "pro-1")).thenReturn(List.of());
-        when(bids.save(any(Bid.class))).thenAnswer(i -> i.getArgument(0));
-        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
-
-        BidDto proposed = service.proposePrice("pro-1", "j1", 85000.0);
-
-        assertEquals("bid_j1_pro-1", proposed.getId());
-        assertEquals("PENDING", proposed.getStatus());
-        assertEquals(0, proposed.getCounterRound());
-        verify(notifications).notifyUser(eq("client-1"), any(), any(), eq("j1"));
-    }
 
     @Test
     void createWithProfessionalAssignsAndNegotiates() {
@@ -471,25 +353,6 @@ class JobServiceTest {
         verify(ratingService, org.mockito.Mockito.never()).rate(any(), any(), any());
     }
 
-    @Test
-    void listIncludesNegotiatingJobsWithMyBid() {
-        Job negotiating = job("j9");
-        negotiating.setStatus("NEGOTIATING");
-        negotiating.setClientId("client-9");
-        negotiating.setProfessionalId(null);
-        Bid myBid = new Bid();
-        myBid.setId("bid_j9_pro-1");
-        myBid.setJobId("j9");
-        myBid.setProfessionalId("pro-1");
-        when(jobs.findByProfessionalIdOrderByCreatedAtDesc("pro-1")).thenReturn(List.of());
-        when(bids.findByProfessionalId("pro-1")).thenReturn(List.of(myBid));
-        when(jobs.findById("j9")).thenReturn(Optional.of(negotiating));
-
-        List<JobDto> result = service.list("pro-1", null, "pro-1", null);
-
-        assertEquals(1, result.size());
-        assertEquals("j9", result.get(0).getId());
-    }
 
     @Test
     void deleteBlocksAcceptedAndInProgressJobs() {

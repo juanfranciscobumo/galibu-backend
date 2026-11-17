@@ -1316,7 +1316,7 @@
       return '<div><span>' + item[0] + '</span><b>' + item[1] + '</b></div>';
     }).join('');
 
-    var rowStats = ['users', 'jobs', 'bids', 'ratings', 'wallet_transactions', 'devices'].map(function (t) {
+    var rowStats = ['users', 'jobs', 'ratings', 'wallet_transactions', 'devices'].map(function (t) {
       return '<div class="stat"><span>' + t + '</span><b>' + fmtNum(rows[t]) + '</b></div>';
     }).join('');
 
@@ -1586,13 +1586,13 @@
   function cohortTable(rows) {
     if (!rows || !rows.length) return '<div class="empty">Sin cohortes registradas.</div>';
     return '<div class="table-wrap small"><table class="stats-table"><thead><tr>' +
-      '<th>Semana</th><th>Usuarios</th><th>Con solicitud</th><th>Con oferta</th><th>Pro</th>' +
+      '<th>Semana</th><th>Usuarios</th><th>Con solicitud</th><th>Con profesional</th><th>Pro</th>' +
       '</tr></thead><tbody>' +
       rows.map(function (row) {
         return '<tr><td>' + esc(row.bucket) + '</td>' +
           '<td class="num">' + fmtNum(row.users) + '</td>' +
           '<td class="num">' + fmtNum(row.with_job) + '</td>' +
-          '<td class="num">' + fmtNum(row.with_bid) + '</td>' +
+          '<td class="num">' + fmtNum(row.with_professional) + '</td>' +
           '<td class="num">' + fmtNum(row.pro) + '</td></tr>';
       }).join('') +
       '</tbody></table></div>';
@@ -1615,7 +1615,6 @@
     state.stats = payload;
     var users = payload.users || {};
     var jobs = payload.jobs || {};
-    var bids = payload.bids || {};
     var ratings = payload.ratings || {};
     var wallet = payload.wallet || {};
     var revenue = payload.revenue || {};
@@ -1681,11 +1680,7 @@
         ['Creadas hoy / ayer', fmtNum(jobs.createdToday) + ' / ' + fmtNum(jobs.createdYesterday)],
         ['Creadas últimos 7 días', fmtNum(jobs.created7d)]
       ])),
-      statPanel('Ofertas y calificaciones', keyValueTable([
-        ['Ofertas totales', fmtNum(bids.total)],
-        ['Pendientes / aceptadas / rechazadas',
-          fmtNum(bids.pending) + ' / ' + fmtNum(bids.accepted) + ' / ' + fmtNum(bids.rejected)],
-        ['Ofertas hoy / ayer', fmtNum(bids.today) + ' / ' + fmtNum(bids.yesterday)],
+      statPanel('Calificaciones', keyValueTable([
         ['Calificaciones', fmtNum(ratings.total)],
         ['Promedio de estrellas', (ratings.avgStars || 0).toFixed(2) + ' / 5'],
         ['Calificaciones hoy / ayer', fmtNum(ratings.today) + ' / ' + fmtNum(ratings.yesterday)]
@@ -1918,7 +1913,6 @@
     var subs = listOf(payload.subscriptions);
     var jobsClient = listOf(payload.jobsAsClient);
     var jobsPro = listOf(payload.jobsAsProfessional);
-    var bids = listOf(payload.bids);
     var given = listOf(payload.ratingsGiven);
     var received = listOf(payload.ratingsReceived);
     var frontItems = listOf(payload.frontLogs);
@@ -1963,8 +1957,6 @@
         fmtNum(activeJobsClient) + ' activas'),
       statKpi('Solicitudes como profesional', fmtNum(jobsPro.length),
         fmtNum(jobsPro.filter(function (j) { return j.status === 'COMPLETED'; }).length) + ' completadas'),
-      statKpi('Ofertas enviadas', fmtNum(bids.length),
-        fmtNum(bids.filter(function (b) { return b.status === 'ACCEPTED'; }).length) + ' aceptadas'),
       statKpi('Calificación recibida', received.length ? avgReceived.toFixed(2) + ' / 5' : '—',
         fmtNum(received.length) + ' reseñas · ' + fmtNum(given.length) + ' dadas',
         avgReceived >= 4.5 ? 'green' : (received.length && avgReceived < 3.5 ? 'red' : ''))
@@ -2007,15 +1999,6 @@
         '<td class="num">' + (j.final_price == null ? '—' : fmtMoney(j.final_price)) + '</td>' +
         '<td>' + esc(j.client_name || '—') + '</td>' +
         '<td class="num">' + stamp(j.created_at) + '</td></tr>';
-    });
-
-    var bidRows = bids.map(function (b) {
-      return '<tr><td>' + esc(b.job_title || b.job_id) + '</td>' +
-        '<td class="num">' + fmtMoney(b.amount) + '</td>' +
-        '<td>' + esc(b.status) + '</td>' +
-        '<td>' + esc(b.quote_type || '—') + '</td>' +
-        '<td class="num">' + fmtNum(b.counter_round) + '</td>' +
-        '<td class="num">' + stamp(b.created_at) + '</td></tr>';
     });
 
     var receivedRows = received.map(function (r) {
@@ -2072,9 +2055,6 @@
       statPanel('Solicitudes como profesional', profileTable(
         ['Solicitud', 'Estado', 'Precio final', 'Cliente', 'Creada'],
         proRows, 'Aún no tiene trabajos asignados.')) +
-      statPanel('Ofertas enviadas', profileTable(
-        ['Solicitud', 'Monto', 'Estado', 'Tipo', 'Ronda', 'Creada'],
-        bidRows, 'Aún no ha enviado ofertas.')) +
       statPanel('Calificaciones recibidas', profileTable(
         ['Estrellas', 'Comentario', 'De', 'Fecha'], receivedRows, 'Sin calificaciones recibidas.')) +
       statPanel('Calificaciones dadas', profileTable(

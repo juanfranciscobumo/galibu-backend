@@ -37,9 +37,6 @@ class UserServiceTest {
     private com.galibu.backend.jobs.JobRepository jobs;
 
     @Mock
-    private com.galibu.backend.bids.BidRepository bids;
-
-    @Mock
     private com.galibu.backend.ratings.RatingRepository ratings;
 
     @Mock
@@ -196,7 +193,6 @@ class UserServiceTest {
         // Historial: trabajos (arrastran ofertas y calificaciones), ofertas en otros
         // trabajos, calificaciones y billetera. Después se borra la cuenta.
         verify(jobs).deleteAllForUser("u1");
-        verify(bids).deleteAllForUser("u1");
         verify(ratings).deleteAllForUser("u1");
         verify(walletTransactions).deleteAllForUser("u1");
         verify(users).delete(u);

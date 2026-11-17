@@ -51,7 +51,6 @@ public class AppStatsService {
 
         Map<String, Object> users = new LinkedHashMap<>();
         Map<String, Object> jobs = new LinkedHashMap<>();
-        Map<String, Object> bids = new LinkedHashMap<>();
         Map<String, Object> ratings = new LinkedHashMap<>();
         Map<String, Object> wallet = new LinkedHashMap<>();
         Map<String, Object> revenue = new LinkedHashMap<>();
@@ -101,18 +100,6 @@ public class AppStatsService {
                     + " from jobs group by category order by count desc limit 8"));
         } catch (Exception ex) {
             jobs.put("error", ex.getMessage());
-        }
-
-        try {
-            Map<String, Long> statuses = countBy("select status, count(*) as c from bids group by status", "status", "c");
-            bids.put("total", statuses.values().stream().mapToLong(Long::longValue).sum());
-            bids.put("pending", statuses.getOrDefault("PENDING", 0L));
-            bids.put("accepted", statuses.getOrDefault("ACCEPTED", 0L));
-            bids.put("rejected", statuses.getOrDefault("REJECTED", 0L));
-            bids.put("today", countRange("bids", "created_at", todayStart, tomorrowStart));
-            bids.put("yesterday", countRange("bids", "created_at", yesterdayStart, todayStart));
-        } catch (Exception ex) {
-            bids.put("error", ex.getMessage());
         }
 
         try {
@@ -180,20 +167,20 @@ public class AppStatsService {
 
         try {
             long jobsTotal = value("select count(*) from jobs");
-            long jobsWithBids = value("select count(distinct job_id) from bids");
-            long jobsWithAccepted = value("select count(distinct job_id) from bids where status = 'ACCEPTED'");
+            long jobsWithProfessional = value("select count(*) from jobs where professional_id is not null and professional_id <> ''");
+            long jobsNegotiating = value("select count(*) from jobs where status = 'NEGOTIATING'");
             long jobsCompleted = value("select count(*) from jobs where status = 'COMPLETED'");
             long jobsRated = value("select count(distinct job_id) from ratings");
             funnel.put("jobs", List.of(
                 funnelStep("Solicitudes creadas", jobsTotal, jobsTotal),
-                funnelStep("Con al menos una oferta", jobsWithBids, jobsTotal),
-                funnelStep("Con oferta aceptada", jobsWithAccepted, jobsTotal),
+                funnelStep("Con profesional asignado", jobsWithProfessional, jobsTotal),
+                funnelStep("En negociación", jobsNegotiating, jobsTotal),
                 funnelStep("Completadas", jobsCompleted, jobsTotal),
                 funnelStep("Calificadas", jobsRated, jobsTotal)));
 
             long usersTotal = value("select count(*) from users");
             long usersWithJob = value("select count(distinct client_id) from jobs");
-            long usersWithBid = value("select count(distinct professional_id) from bids");
+            long usersWhoAccepted = value("select count(distinct professional_id) from jobs where professional_id is not null and professional_id <> ''");
             long usersWithCompleted = value(
                 "select count(distinct professional_id) from jobs where status = 'COMPLETED' and professional_id is not null");
             long usersWithRating = value("select count(distinct rated_id) from ratings");
@@ -201,12 +188,12 @@ public class AppStatsService {
             funnel.put("users", List.of(
                 funnelStep("Registrados", usersTotal, usersTotal),
                 funnelStep("Crearon una solicitud", usersWithJob, usersTotal),
-                funnelStep("Enviaron una oferta", usersWithBid, usersTotal),
+                funnelStep("Tomaron una solicitud", usersWhoAccepted, usersTotal),
                 funnelStep("Completaron un trabajo", usersWithCompleted, usersTotal),
                 funnelStep("Recibieron calificación", usersWithRating, usersTotal),
                 funnelStep("Tienen plan Pro", usersPro, usersTotal)));
             funnel.put("completionRate", jobsTotal > 0 ? Math.round(jobsCompleted * 10000.0 / jobsTotal) / 100.0 : 0.0);
-            funnel.put("acceptanceRate", jobsTotal > 0 ? Math.round(jobsWithAccepted * 10000.0 / jobsTotal) / 100.0 : 0.0);
+            funnel.put("acceptanceRate", jobsTotal > 0 ? Math.round(jobsWithProfessional * 10000.0 / jobsTotal) / 100.0 : 0.0);
         } catch (Exception ex) {
             funnel.put("error", ex.getMessage());
         }
@@ -217,7 +204,7 @@ public class AppStatsService {
                     + " min(created_at) as first_at, count(*) as users,"
                     + " sum(case when subscription_plan = 'PRO' then 1 else 0 end) as pro,"
                     + " sum(case when exists (select 1 from jobs j where j.client_id = users.id) then 1 else 0 end) as with_job,"
-                    + " sum(case when exists (select 1 from bids b where b.professional_id = users.id) then 1 else 0 end) as with_bid"
+                    + " sum(case when exists (select 1 from jobs j where j.professional_id = users.id) then 1 else 0 end) as with_professional"
                     + " from users group by bucket order by bucket desc limit 12"));
         } catch (Exception ex) {
             cohorts.put("error", ex.getMessage());
@@ -242,7 +229,6 @@ public class AppStatsService {
 
         out.put("users", users);
         out.put("jobs", jobs);
-        out.put("bids", bids);
         out.put("ratings", ratings);
         out.put("wallet", wallet);
         out.put("revenue", revenue);

@@ -2,7 +2,6 @@ package com.galibu.backend.jobs;
 
 import com.galibu.backend.jobs.dto.CreateJobRequest;
 import com.galibu.backend.jobs.dto.JobDto;
-import com.galibu.backend.jobs.dto.PriceProposalRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -88,12 +87,10 @@ public class JobController {
         service.delete(auth.getName(), id);
     }
 
-    @PostMapping("/{id}/propose-price")
-    public com.galibu.backend.bids.dto.BidDto proposePrice(
-        Authentication auth, @PathVariable String id, @Valid @RequestBody PriceProposalRequest request
-    ) {
-        log.info("jobs proposePrice userId={} jobId={} amount={}", auth.getName(), id, request.getAmount());
-        return service.proposePrice(auth.getName(), id, request.getAmount());
+    @PostMapping("/{id}/accept")
+    public JobDto accept(Authentication auth, @PathVariable String id) {
+        log.info("jobs accept userId={} jobId={}", auth.getName(), id);
+        return service.acceptJob(auth.getName(), id);
     }
 
     @PostMapping("/{id}/start")

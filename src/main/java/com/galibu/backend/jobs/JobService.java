@@ -1,14 +1,9 @@
 package com.galibu.backend.jobs;
 
 import com.galibu.backend.common.TextUtils;
-import com.galibu.backend.bids.Bid;
-import com.galibu.backend.bids.BidEvent;
-import com.galibu.backend.bids.BidEventRepository;
-import com.galibu.backend.bids.BidRepository;
 import com.galibu.backend.chat.ChatService;
 import com.galibu.backend.jobs.dto.CreateJobRequest;
 import com.galibu.backend.jobs.dto.JobDto;
-import com.galibu.backend.bids.dto.BidDto;
 import com.galibu.backend.notifications.NotificationService;
 import com.galibu.backend.subscription.SubscriptionService;
 import com.galibu.backend.users.User;
@@ -28,22 +23,17 @@ public class JobService {
 
     private final JobRepository jobs;
     private final UserRepository users;
-    private final BidRepository bids;
-    private final BidEventRepository bidEvents;
     private final com.galibu.backend.ratings.RatingService ratingService;
     private final SubscriptionService subscriptions;
     private final ChatService chat;
     private final NotificationService notifications;
 
-    public JobService(JobRepository jobs, UserRepository users, BidRepository bids,
-            BidEventRepository bidEvents,
+    public JobService(JobRepository jobs, UserRepository users,
             com.galibu.backend.ratings.RatingService ratingService,
             SubscriptionService subscriptions, ChatService chat,
             NotificationService notifications) {
         this.jobs = jobs;
         this.users = users;
-        this.bids = bids;
-        this.bidEvents = bidEvents;
         this.ratingService = ratingService;
         this.subscriptions = subscriptions;
         this.chat = chat;
@@ -79,17 +69,6 @@ public class JobService {
                 if (seen.add(j.getId())) {
                     merged.add(j);
                 }
-            }
-            // Negociaciones activas: NEGOTIATING sin asignar donde el profesional ya ofertó.
-            // Sin esto, al contraofertar (el job deja de ser OPEN) el job desaparece del sync.
-            for (Bid b : bids.findByProfessionalId(professionalId)) {
-                jobs.findById(b.getJobId()).ifPresent(j -> {
-                    if ("NEGOTIATING".equals(j.getStatus())
-                            && (j.getProfessionalId() == null || j.getProfessionalId().isBlank())
-                            && seen.add(j.getId())) {
-                        merged.add(j);
-                    }
-                });
             }
         }
         if (status != null) {
@@ -188,6 +167,33 @@ public class JobService {
     }
 
     @Transactional
+    public JobDto acceptJob(String uid, String jobId) {
+        Job job = findOr404(jobId);
+        User pro = findUserOr404(uid);
+        if (!"PROFESSIONAL".equals(pro.getRole()) && !"BOTH".equals(pro.getRole())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo un profesional puede aceptar solicitudes");
+        }
+        if (!"OPEN".equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud ya no está disponible");
+        }
+        if (uid.equals(job.getClientId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No puedes aceptar tu propia solicitud");
+        }
+        if (job.getProfessionalId() != null && !job.getProfessionalId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud ya tiene profesional asignado");
+        }
+        job.setProfessionalId(pro.getId());
+        job.setProfessionalName(pro.getName());
+        job.setStatus("NEGOTIATING");
+        Job saved = jobs.save(job);
+        chat.postSystemMessage(jobId, "Sistema",
+            "🤝 " + pro.getName() + " ha tomado esta solicitud. Pueden acordar el precio y los detalles por el chat.");
+        notifications.notifyUser(job.getClientId(), "Profesional interesado",
+            pro.getName() + " ha tomado tu solicitud '" + job.getTitle() + "'. Pueden acordar el precio por el chat.", jobId);
+        return JobDto.from(saved);
+    }
+
+    @Transactional
     public JobDto cancel(String uid, String jobId, String reason) {
         Job job = findOr404(jobId);
         requireParticipant(uid, job);
@@ -220,97 +226,6 @@ public class JobService {
                 "No puedes eliminar una solicitud aceptada, en curso o completada. Cancelarla si ya no la necesitas.");
         }
         jobs.delete(job);
-    }
-
-    /**
-     * Propone (o actualiza) un precio para un trabajo desde el chat.
-     *
-     * El precio siempre vive en la oferta del profesional asignado:
-     * - Si propone el profesional, actualiza su propia oferta.
-     * - Si propone el cliente, actualiza la oferta del profesional y la deja
-     *   como COUNTERED_BY_CLIENT para que el profesional pueda aceptarla.
-     * Así ambos ven la misma negociación y no se crean ofertas paralelas.
-     */
-    @Transactional
-    public BidDto proposePrice(String uid, String jobId, Double amount) {
-        Job job = findOr404(jobId);
-        if (!"OPEN".equals(job.getStatus()) && !"NEGOTIATING".equals(job.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                "El trabajo no admite propuestas de precio en su estado actual");
-        }
-        boolean isClient = uid.equals(job.getClientId());
-        boolean isAssignedPro = job.getProfessionalId() != null && uid.equals(job.getProfessionalId());
-        if (!isClient && !isAssignedPro) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                "Solo el cliente o el profesional asignado pueden proponer precio");
-        }
-        if (amount == null || amount <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El precio debe ser mayor a 0");
-        }
-        String bidOwnerId = uid;
-        if (isClient) {
-            String professionalId = job.getProfessionalId();
-            if (professionalId == null || professionalId.isBlank()) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Elige una oferta de un profesional para negociar el precio");
-            }
-            bidOwnerId = professionalId;
-        }
-        String bidId = "bid_" + jobId + "_" + bidOwnerId;
-        List<Bid> previous = bids.findAllByJobIdAndProfessionalId(jobId, bidOwnerId);
-        Bid existing = previous.stream().filter(b -> b.getId().equals(bidId)).findFirst().orElse(null);
-        if (existing != null && ("ACCEPTED".equals(existing.getStatus())
-                || "REJECTED".equals(existing.getStatus()))) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "La oferta ya fue decidida");
-        }
-        boolean isCounter = existing != null;
-        Bid bid = existing != null ? existing : new Bid();
-        User bidOwner = findUserOr404(bidOwnerId);
-        bid.setId(bidId);
-        bid.setJobId(jobId);
-        bid.setProfessionalId(bidOwnerId);
-        bid.setProfessionalName(bidOwner.getName());
-        bid.setProfessionalRating(bidOwner.getRating());
-        bid.setProfessionalPhoto(bidOwner.getProfilePhotoUrl());
-        bid.setAmount(amount);
-        bid.setDurationHours(1);
-        bid.setStatus(isClient
-            ? "COUNTERED_BY_CLIENT"
-            : (isCounter ? "COUNTERED_BY_PROFESSIONAL" : "PENDING"));
-        if (bid.getQuoteType() == null || bid.getQuoteType().isBlank()) {
-            bid.setQuoteType("ESTIMATED");
-        }
-        // Cada propuesta sobre una oferta ya existente abre una nueva ronda.
-        bid.setCounterRound(isCounter ? bid.getCounterRound() + 1 : 0);
-        Bid saved = bids.save(bid);
-        BidEvent event = new BidEvent();
-        event.setId("evt_" + UUID.randomUUID());
-        event.setBidId(saved.getId());
-        event.setJobId(saved.getJobId());
-        event.setAuthorId(uid);
-        event.setAuthorRole(isClient ? "CLIENT" : "PROFESSIONAL");
-        event.setAction(isCounter ? "COUNTER" : "OFFER");
-        event.setAmount(saved.getAmount());
-        event.setRound(saved.getCounterRound());
-        bidEvents.save(event);
-        // Mantiene los campos de negociación del job alineados para las tarjetas.
-        job.setCounterOfferAmount(amount);
-        job.setCounterOfferSender(isClient ? "CLIENT" : "PROFESSIONAL");
-        jobs.save(job);
-        String who = isClient ? "El cliente" : "El profesional";
-        String roundText = saved.getCounterRound() > 0
-            ? " (ronda " + saved.getCounterRound() + ")" : "";
-        String target = isClient ? job.getProfessionalId() : job.getClientId();
-        chat.postSystemMessage(jobId, "Sistema",
-            who + " propuso un precio de $" + formatAmount(amount) + " COP" + roundText + ".");
-        if (target != null && !target.isBlank()) {
-            String title = saved.getCounterRound() > 0
-                ? "Contraoferta · Ronda " + saved.getCounterRound()
-                : (isClient ? "El cliente propone un precio" : "Nueva propuesta de precio");
-            notifications.notifyUser(target, title,
-                who + " propuso $" + formatAmount(amount) + " COP para '" + job.getTitle() + "'.", jobId);
-        }
-        return BidDto.from(saved);
     }
 
     @Transactional
@@ -413,11 +328,6 @@ public class JobService {
 
     private String norm(String value) {
         return value == null ? "" : value.trim().toLowerCase();
-    }
-
-    /** Montos enteros sin decimales (50000.0 -> 50000) para los mensajes del chat. */
-    private String formatAmount(double value) {
-        return value == Math.rint(value) ? String.valueOf((long) value) : String.valueOf(value);
     }
 
     private String normalizeSource(String value) {
