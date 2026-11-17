@@ -29,6 +29,7 @@ public class AlertService {
     private final FrontLogStore frontLogs;
     private final MetricsHistoryStore history;
     private final JdbcTemplate jdbc;
+    private final AppConfigService config;
 
     /** Severidad actualmente abierta por alerta (null si está resuelta). */
     private final Map<String, String> openSeverity = new ConcurrentHashMap<>();
@@ -42,7 +43,8 @@ public class AlertService {
         DatabaseMetrics database,
         FrontLogStore frontLogs,
         MetricsHistoryStore history,
-        JdbcTemplate jdbc
+        JdbcTemplate jdbc,
+        AppConfigService config
     ) {
         this.metrics = metrics;
         this.jvm = jvm;
@@ -50,6 +52,7 @@ public class AlertService {
         this.frontLogs = frontLogs;
         this.history = history;
         this.jdbc = jdbc;
+        this.config = config;
     }
 
     public Map<String, Object> current() {
@@ -133,6 +136,19 @@ public class AlertService {
         List<Map<String, Object>> active = new ArrayList<>();
         Map<String, Object> window = metrics.window(WINDOW_MINUTES);
 
+        double errorRateWarning = config.getDouble("alert.errorRate.warning", 2.0);
+        double errorRateCritical = config.getDouble("alert.errorRate.critical", 5.0);
+        double serverErrorRateCritical = config.getDouble("alert.serverErrorRate.critical", 1.0);
+        double latencyWarningMs = config.getDouble("alert.latency.warningMs", 2000.0);
+        double latencyCriticalMs = config.getDouble("alert.latency.criticalMs", 5000.0);
+        double poolWarning = config.getDouble("alert.pool.warning", 75.0);
+        double poolCritical = config.getDouble("alert.pool.critical", 90.0);
+        double heapWarning = config.getDouble("alert.heap.warning", 85.0);
+        double heapCritical = config.getDouble("alert.heap.critical", 95.0);
+        double frontErrorsWarning = config.getDouble("alert.frontErrors.warning", 50.0);
+        double frontErrorsCritical = config.getDouble("alert.frontErrors.critical", 200.0);
+        double jobsWithoutBidsWarning = config.getDouble("alert.jobsWithoutBids.warning", 1.0);
+
         double errorRate = number(window, "errorRate");
         double serverErrorRate = number(window, "serverErrorRate");
         double p95 = number(window, "p95Ms");
@@ -140,7 +156,7 @@ public class AlertService {
         boolean hasTraffic = requests >= 5;
 
         // 1. Errores de la API
-        if (hasTraffic && (serverErrorRate > 1.0 || errorRate > 5.0)) {
+        if (hasTraffic && (serverErrorRate > serverErrorRateCritical || errorRate > errorRateCritical)) {
             active.add(alert(
                 "api_errors",
                 "CRITICAL",
@@ -148,37 +164,37 @@ public class AlertService {
                 "Ventana de 5 min: " + errorRate + " % de errores ("
                     + serverErrorRate + " % son 5xx) con " + requests + " peticiones.",
                 Math.max(errorRate, serverErrorRate),
-                5.0,
+                errorRateCritical,
                 "%"));
-        } else if (hasTraffic && errorRate > 2.0) {
+        } else if (hasTraffic && errorRate > errorRateWarning) {
             active.add(alert(
                 "api_errors",
                 "WARNING",
                 "Errores por encima de lo habitual",
                 "Ventana de 5 min: " + errorRate + " % de errores en " + requests + " peticiones.",
                 errorRate,
-                2.0,
+                errorRateWarning,
                 "%"));
         }
 
         // 2. Latencia p95
-        if (hasTraffic && p95 > 5000.0) {
+        if (hasTraffic && p95 > latencyCriticalMs) {
             active.add(alert(
                 "api_latency",
                 "CRITICAL",
                 "Latencia p95 muy alta",
                 "La latencia p95 en los últimos 5 min es " + p95 + " ms.",
                 p95,
-                5000.0,
+                latencyCriticalMs,
                 "ms"));
-        } else if (hasTraffic && p95 > 2000.0) {
+        } else if (hasTraffic && p95 > latencyWarningMs) {
             active.add(alert(
                 "api_latency",
                 "WARNING",
                 "Latencia p95 elevada",
                 "La latencia p95 en los últimos 5 min es " + p95 + " ms.",
                 p95,
-                2000.0,
+                latencyWarningMs,
                 "ms"));
         }
 
@@ -190,23 +206,23 @@ public class AlertService {
         int poolConfiguredMax = intFrom(db, "pool.max", poolTotal);
         int limit = poolConfiguredMax > 0 ? poolConfiguredMax : poolTotal;
         double poolUsage = limit > 0 ? (poolActive * 100.0 / limit) : 0.0;
-        if (poolUsage >= 90.0) {
+        if (poolUsage >= poolCritical) {
             active.add(alert(
                 "db_pool",
                 "CRITICAL",
                 "Pool de base de datos casi agotado",
                 "Conexiones activas: " + poolActive + " de " + limit + " (" + round(poolUsage) + " %).",
                 poolUsage,
-                90.0,
+                poolCritical,
                 "%"));
-        } else if (poolUsage >= 75.0) {
+        } else if (poolUsage >= poolWarning) {
             active.add(alert(
                 "db_pool",
                 "WARNING",
                 "Uso alto del pool de base de datos",
                 "Conexiones activas: " + poolActive + " de " + limit + " (" + round(poolUsage) + " %).",
                 poolUsage,
-                75.0,
+                poolWarning,
                 "%"));
         }
         try {
@@ -228,7 +244,7 @@ public class AlertService {
         double heapUsage = snapshot.heapMax() > 0
             ? (snapshot.heapUsed() * 100.0 / snapshot.heapMax())
             : 0.0;
-        if (heapUsage >= 95.0) {
+        if (heapUsage >= heapCritical) {
             active.add(alert(
                 "heap",
                 "CRITICAL",
@@ -236,38 +252,38 @@ public class AlertService {
                 "Uso de heap: " + round(heapUsage) + " % (" + bytes(snapshot.heapUsed())
                     + " de " + bytes(snapshot.heapMax()) + ").",
                 heapUsage,
-                95.0,
+                heapCritical,
                 "%"));
-        } else if (heapUsage >= 85.0) {
+        } else if (heapUsage >= heapWarning) {
             active.add(alert(
                 "heap",
                 "WARNING",
                 "Uso alto de memoria heap",
                 "Uso de heap: " + round(heapUsage) + " %.",
                 heapUsage,
-                85.0,
+                heapWarning,
                 "%"));
         }
 
         // 5. Errores del frontend
         long frontErrors = snapshot.frontErrors();
-        if (frontErrors >= 200) {
+        if (frontErrors >= frontErrorsCritical) {
             active.add(alert(
                 "front_errors",
                 "CRITICAL",
                 "Muchos errores del frontend",
                 "El buffer en memoria acumula " + frontErrors + " errores de la app.",
                 frontErrors,
-                200.0,
+                frontErrorsCritical,
                 "errores"));
-        } else if (frontErrors >= 50) {
+        } else if (frontErrors >= frontErrorsWarning) {
             active.add(alert(
                 "front_errors",
                 "WARNING",
                 "Errores del frontend por encima de lo habitual",
                 "El buffer en memoria acumula " + frontErrors + " errores de la app.",
                 frontErrors,
-                50.0,
+                frontErrorsWarning,
                 "errores"));
         }
 
@@ -288,14 +304,14 @@ public class AlertService {
 
         // 7. Solicitudes abiertas sin ofertas
         long noBids = snapshot.jobsWithoutBids();
-        if (noBids > 0) {
+        if (noBids >= jobsWithoutBidsWarning) {
             active.add(alert(
                 "jobs_without_bids",
                 "WARNING",
                 "Solicitudes abiertas sin ofertas",
                 noBids + " solicitud(es) llevan más de 24 h abiertas sin ninguna oferta.",
                 noBids,
-                1.0,
+                jobsWithoutBidsWarning,
                 "solicitudes"));
         }
 
@@ -453,18 +469,18 @@ public class AlertService {
 
     private Map<String, Object> thresholds() {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("errorRateWarning", 2.0);
-        out.put("errorRateCritical", 5.0);
-        out.put("serverErrorRateCritical", 1.0);
-        out.put("latencyWarningMs", 2000.0);
-        out.put("latencyCriticalMs", 5000.0);
-        out.put("poolWarning", 75.0);
-        out.put("poolCritical", 90.0);
-        out.put("heapWarning", 85.0);
-        out.put("heapCritical", 95.0);
-        out.put("frontErrorsWarning", 50.0);
-        out.put("frontErrorsCritical", 200.0);
-        out.put("jobsWithoutBidsWarning", 1.0);
+        out.put("errorRateWarning", config.getDouble("alert.errorRate.warning", 2.0));
+        out.put("errorRateCritical", config.getDouble("alert.errorRate.critical", 5.0));
+        out.put("serverErrorRateCritical", config.getDouble("alert.serverErrorRate.critical", 1.0));
+        out.put("latencyWarningMs", config.getDouble("alert.latency.warningMs", 2000.0));
+        out.put("latencyCriticalMs", config.getDouble("alert.latency.criticalMs", 5000.0));
+        out.put("poolWarning", config.getDouble("alert.pool.warning", 75.0));
+        out.put("poolCritical", config.getDouble("alert.pool.critical", 90.0));
+        out.put("heapWarning", config.getDouble("alert.heap.warning", 85.0));
+        out.put("heapCritical", config.getDouble("alert.heap.critical", 95.0));
+        out.put("frontErrorsWarning", config.getDouble("alert.frontErrors.warning", 50.0));
+        out.put("frontErrorsCritical", config.getDouble("alert.frontErrors.critical", 200.0));
+        out.put("jobsWithoutBidsWarning", config.getDouble("alert.jobsWithoutBids.warning", 1.0));
         return out;
     }
 

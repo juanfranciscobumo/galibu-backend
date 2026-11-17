@@ -322,7 +322,17 @@
   .alert-card .alert-title { font-weight: 700; font-size: 12.5px; margin: 0 0 3px; }
   .alert-card .alert-detail { color: var(--muted); font-size: 11px; margin: 0 0 6px; }
   .alert-card .alert-meta { color: var(--muted-2); font-size: 10px; font-family: var(--mono); }
-  .alert-card .alert-actions { margin-top: 6px; }
+  .config-group { margin-bottom: 14px; }
+  .config-group-title { font-size: 11px; letter-spacing: .5px; text-transform: uppercase; color: #B9C8DE; margin: 0 0 8px; }
+  .config-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,.06); }
+  .config-meta { display: grid; gap: 2px; min-width: 0; }
+  .config-key { color: #93C5FD; font-family: var(--mono); font-size: 10.5px; }
+  .config-desc { color: var(--muted); font-size: 10.5px; }
+  .config-updated { color: var(--muted-2); font-size: 9.5px; }
+  .config-edit { display: flex; gap: 6px; align-items: center; }
+  .config-input { background: #0A1322; border: 1px solid var(--border-soft); color: #D7E3F5; border-radius: 8px; padding: 4px 8px; font-size: 11.5px; min-width: 90px; }
+  .config-input:focus { border-color: rgba(47, 123, 255, .6); outline: none; }
+  .btn.small { padding: 4px 8px; font-size: 10.5px; }
 
   /* Perfil 360 */
   .profile-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
@@ -383,6 +393,7 @@
     <button type="button" class="tab-btn" data-tab="stats">Estadísticas</button>
     <button type="button" class="tab-btn" data-tab="profile">Perfil 360</button>
     <button type="button" class="tab-btn" data-tab="alerts" id="alertsTabBtn">Alertas</button>
+    <button type="button" class="tab-btn" data-tab="config">Configuración</button>
   </nav>
 
   <div id="panel-overview" class="tab-panel active">
@@ -691,6 +702,33 @@
     </section>
   </div>
 
+  <div id="panel-alerts" class="tab-panel">
+    <!-- ... existing alerts panel content ... -->
+  </div>
+
+  <div id="panel-config" class="tab-panel">
+    <div class="searchbar">
+      <span class="muted tiny">Configuración dinámica de la aplicación. Cada cambio queda auditado.</span>
+      <button class="btn" type="button" id="configRefreshBtn">Recargar</button>
+    </div>
+    <div class="stats-kpis" id="configKpis"><div class="empty">Cargando configuración…</div></div>
+    <section class="grid cols-2">
+      <article class="card" style="grid-column: 1 / -1">
+        <header>
+          <h2>Configuración</h2>
+          <span class="muted tiny" id="configSummary">—</span>
+        </header>
+        <div id="configList"><div class="empty">Cargando…</div></div>
+      </article>
+      <article class="card" style="grid-column: 1 / -1">
+        <header>
+          <h2>Auditoría de cambios</h2>
+          <span class="muted tiny" id="configAuditSummary">—</span>
+        </header>
+        <div id="configAudit"><div class="empty">Sin eventos.</div></div>
+      </article>
+    </section>
+  </div>
   <p class="foot">Galibu v1.0.0 · monitor interno · solo se contabiliza el tráfico de <code>/api/**</code>; el dashboard y los escaneos externos se excluyen</p>
 </main>
 
@@ -731,6 +769,7 @@
     profileData: null,
     profileLoading: false,
     alertsLoaded: false,
+    configLoaded: false,
     stats: null
   };
 
@@ -2054,6 +2093,97 @@
     $('profileBody').innerHTML = html;
   }
 
+  function refreshConfig() {
+    if (state.paused) return;
+    getJSON('/api/monitor/config').then(renderConfig).catch(function () {
+      $('configList').innerHTML = '<div class="empty">No se pudo cargar la configuración.</div>';
+    });
+    getJSON('/api/monitor/config/audit?limit=80').then(renderConfigAudit).catch(function () { /* sin auditoría */ });
+  }
+
+  function renderConfig(payload) {
+    var items = payload.items || [];
+    state.configLoaded = true;
+    $('configSummary').textContent = fmtNum(items.length) + ' claves';
+    if (!items.length) {
+      $('configList').innerHTML = '<div class="empty">Sin configuración.</div>';
+      return;
+    }
+    var groups = {};
+    items.forEach(function (item) {
+      var key = String(item.config_key || '');
+      var prefix = key.split('.')[0];
+      groups[prefix] = groups[prefix] || [];
+      groups[prefix].push(item);
+    });
+    var html = Object.keys(groups).sort().map(function (prefix) {
+      var label = prefix === 'alert' ? 'Umbrales de alertas'
+        : prefix === 'feature' ? 'Feature flags'
+        : prefix === 'app' ? 'Aplicación'
+        : prefix;
+      return '<div class="config-group"><h3 class="config-group-title">' + esc(label) + '</h3>' +
+        groups[prefix].map(configRow).join('') + '</div>';
+    }).join('');
+    $('configList').innerHTML = html;
+
+    var booleans = items.filter(function (i) { return i.value_type === 'BOOLEAN'; }).length;
+    var numbers = items.filter(function (i) { return i.value_type === 'NUMBER'; }).length;
+    $('configKpis').innerHTML = [
+      statKpi('Claves', fmtNum(items.length), 'Configurables'),
+      statKpi('Umbrales', fmtNum(numbers), 'Numéricos'),
+      statKpi('Feature flags', fmtNum(booleans), 'Booleanos'),
+      statKpi('Auditoría', '—', 'Cambios registrados')
+    ].join('');
+  }
+
+  function configRow(item) {
+    var type = String(item.value_type || 'STRING');
+    var value = item.config_value;
+    var input;
+    if (type === 'BOOLEAN') {
+      input = '<select class="config-input" data-key="' + esc(item.config_key) + '">' +
+        '<option value="true"' + (String(value).toLowerCase() === 'true' ? ' selected' : '') + '>true</option>' +
+        '<option value="false"' + (String(value).toLowerCase() !== 'true' ? ' selected' : '') + '>false</option>' +
+        '</select>';
+    } else if (type === 'NUMBER') {
+      input = '<input class="config-input" type="number" step="any" data-key="' + esc(item.config_key) +
+        '" value="' + esc(value) + '">';
+    } else {
+      input = '<input class="config-input" type="text" data-key="' + esc(item.config_key) +
+        '" value="' + esc(value) + '">';
+    }
+    return '<div class="config-row">' +
+      '<div class="config-meta">' +
+        '<code class="config-key">' + esc(item.config_key) + '</code>' +
+        '<span class="config-desc">' + esc(item.description || '') + '</span>' +
+        '<span class="config-updated">Actualizado ' + fmtClock(item.updated_at) + ' por ' + esc(item.updated_by || '—') + '</span>' +
+      '</div>' +
+      '<div class="config-edit">' + input +
+        '<button class="btn small primary" type="button" data-save-key="' + esc(item.config_key) + '">Guardar</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderConfigAudit(payload) {
+    var items = payload.items || [];
+    $('configAuditSummary').textContent = fmtNum(items.length) + ' cambios';
+    if (!items.length) {
+      $('configAudit').innerHTML = '<div class="empty">Sin cambios registrados.</div>';
+      return;
+    }
+    $('configAudit').innerHTML = '<div class="table-wrap small"><table class="stats-table"><thead><tr>' +
+      '<th>Fecha</th><th>Clave</th><th>Anterior</th><th>Nuevo</th><th>Por</th>' +
+      '</tr></thead><tbody>' +
+      items.map(function (item) {
+        return '<tr><td class="num">' + fmtClock(item.changed_at) + '</td>' +
+          '<td><code>' + esc(item.config_key) + '</code></td>' +
+          '<td>' + esc(item.old_value) + '</td>' +
+          '<td>' + esc(item.new_value) + '</td>' +
+          '<td>' + esc(item.changed_by) + '</td></tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+
   function refreshAlerts() {
     if (state.paused) return;
     getJSON('/api/monitor/alerts').then(renderAlerts).catch(function () {
@@ -2180,6 +2310,7 @@
     if (tab === 'front') refreshFrontLogs();
     if (tab === 'stats') refreshStats();
     if (tab === 'alerts') refreshAlerts();
+    if (tab === 'config') refreshConfig();
     if (tab === 'profile' && state.profileUserId && !$('profileSearch').value) {
       $('profileSearch').value = state.profileUserId;
     }
@@ -2226,6 +2357,7 @@
     if (state.tab === 'front' && state.ticks % 2 === 0) refreshFrontLogs();
     if (state.tab === 'stats' && state.ticks % 3 === 0) refreshStats();
     if (state.tab === 'alerts' && state.ticks % 5 === 0) refreshAlerts();
+    if (state.tab === 'config' && state.ticks % 5 === 0) refreshConfig();
   }
 
   // Eventos
@@ -2414,10 +2546,32 @@
     refreshProfile(row.getAttribute('data-profile-user'));
   });
 
-  $('frontLogs').addEventListener('click', function (event) {
-    var link = event.target.closest('.rid-link');
-    if (!link) return;
-    openTraceSearch(link.getAttribute('data-rid'));
+  $('configRefreshBtn').addEventListener('click', refreshConfig);
+
+  $('configList').addEventListener('click', function (event) {
+    var button = event.target.closest('[data-save-key]');
+    if (!button) return;
+    var key = button.getAttribute('data-save-key');
+    if (!key) return;
+    var input = document.querySelector('.config-input[data-key="' + key.replace(/"/g, '\\"') + '"]');
+    if (!input) return;
+    var value = (input.tagName === 'SELECT') ? input.value : input.value;
+    button.disabled = true;
+    button.textContent = 'Guardando…';
+    fetch('/api/monitor/config/' + encodeURIComponent(key), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ value: value, changedBy: 'monitor' })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('error');
+      return res.json();
+    }).then(function () {
+      refreshConfig();
+    }).catch(function () {
+      button.disabled = false;
+      button.textContent = 'Guardar';
+      alert('No se pudo guardar ' + key);
+    });
   });
 
   var resizeTimer = null;

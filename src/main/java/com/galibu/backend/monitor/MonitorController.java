@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 
 /** API que alimenta el dashboard de monitoreo. */
 @RestController
@@ -34,6 +36,7 @@ public class MonitorController {
     private final JdbcTemplate jdbc;
     private final AlertService alerts;
     private final MetricsHistoryStore metricsHistory;
+    private final AppConfigService config;
 
     public MonitorController(
         RequestMetrics metrics,
@@ -46,7 +49,8 @@ public class MonitorController {
         AppStatsService appStats,
         JdbcTemplate jdbc,
         AlertService alerts,
-        MetricsHistoryStore metricsHistory
+        MetricsHistoryStore metricsHistory,
+        AppConfigService config
     ) {
         this.metrics = metrics;
         this.jvm = jvm;
@@ -59,6 +63,7 @@ public class MonitorController {
         this.jdbc = jdbc;
         this.alerts = alerts;
         this.metricsHistory = metricsHistory;
+        this.config = config;
     }
 
     @GetMapping("/data")
@@ -257,6 +262,33 @@ public class MonitorController {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("hours", window);
         out.put("items", metricsHistory.recent(window));
+        return out;
+    }
+
+    @GetMapping("/config")
+    public Map<String, Object> config() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("items", config.list());
+        return out;
+    }
+
+    @PutMapping("/config/{key}")
+    public Map<String, Object> updateConfig(
+        @PathVariable String key,
+        @RequestBody Map<String, Object> body
+    ) {
+        String value = body == null ? null : String.valueOf(body.get("value"));
+        String changedBy = body == null ? null : (String) body.get("changedBy");
+        Map<String, Object> updated = config.update(key, value, changedBy);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("item", updated);
+        return out;
+    }
+
+    @GetMapping("/config/audit")
+    public Map<String, Object> configAudit(@RequestParam(defaultValue = "100") int limit) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("items", config.audit(limit));
         return out;
     }
     /**
