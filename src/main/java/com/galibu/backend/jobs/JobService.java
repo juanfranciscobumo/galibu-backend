@@ -140,6 +140,9 @@ public class JobService {
         boolean directHire = saved.getProfessionalId() != null && !saved.getProfessionalId().isBlank();
         boolean chatThread = saved.getId() != null && saved.getId().startsWith("chat_");
         if (directHire) {
+            chat.postSystemMessage(saved.getId(), "Sistema",
+                "🤝 " + user.getName() + " te ha contratado directamente para '" + saved.getTitle()
+                    + "'. Pueden acordar el precio y los detalles por el chat.");
             if (chatThread) {
                 notifications.notifyUser(saved.getProfessionalId(), "Nueva consulta",
                     "Un cliente quiere hablar contigo sobre '" + saved.getCategory()
@@ -220,8 +223,8 @@ public class JobService {
         if (!uid.equals(job.getClientId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo el cliente puede eliminar su solicitud");
         }
-        if ("ACCEPTED".equals(job.getStatus()) || "IN_PROGRESS".equals(job.getStatus())
-            || "COMPLETED".equals(job.getStatus())) {
+        if ("NEGOTIATING".equals(job.getStatus()) || "ACCEPTED".equals(job.getStatus())
+            || "IN_PROGRESS".equals(job.getStatus()) || "COMPLETED".equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "No puedes eliminar una solicitud aceptada, en curso o completada. Cancelarla si ya no la necesitas.");
         }
@@ -232,8 +235,8 @@ public class JobService {
     public JobDto startService(String uid, String jobId) {
         Job job = findOr404(jobId);
         requireAssignedProfessional(uid, job);
-        if (!"ACCEPTED".equals(job.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Solo se puede iniciar un servicio aceptado");
+        if (!"ACCEPTED".equals(job.getStatus()) && !"NEGOTIATING".equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Solo se puede iniciar un servicio aceptado o en negociación");
         }
         job.setStatus("IN_PROGRESS");
         job.setCounterOfferSender(null);
@@ -263,9 +266,10 @@ public class JobService {
             }
             return JobDto.from(findOr404(jobId));
         }
-        if (!"IN_PROGRESS".equals(job.getStatus()) && !"ACCEPTED".equals(job.getStatus())) {
+        if (!"IN_PROGRESS".equals(job.getStatus()) && !"ACCEPTED".equals(job.getStatus())
+                && !"NEGOTIATING".equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                "Solo se puede finalizar un servicio aceptado o en progreso");
+                "Solo se puede finalizar un servicio en negociación, aceptado o en progreso");
         }
         job.setStatus("COMPLETED");
         job.setCounterOfferSender(null);
