@@ -355,6 +355,61 @@ class JobServiceTest {
 
 
     @Test
+    void applyCreatesChildApplicationAndIsIdempotent() {
+        Job parent = job("parent");
+        parent.setStatus("OPEN");
+        parent.setClientId("client-1");
+        when(jobs.findById("parent")).thenReturn(Optional.of(parent));
+        User pro = client("pro-1");
+        pro.setRole("PROFESSIONAL");
+        when(users.findById("pro-1")).thenReturn(Optional.of(pro));
+        when(jobs.findByParentJobIdAndProfessionalId("parent", "pro-1")).thenReturn(List.of());
+        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+
+        JobDto app = service.apply("pro-1", "parent");
+        assertTrue(app.getId().startsWith("app_"));
+        assertEquals("parent", app.getParentJobId());
+        assertEquals("NEGOTIATING", app.getStatus());
+        assertEquals("pro-1", app.getProfessionalId());
+
+        // Idempotente: si ya existe una postulación activa, se devuelve la misma.
+        Job existing = job("app_existing");
+        existing.setParentJobId("parent");
+        existing.setProfessionalId("pro-1");
+        existing.setStatus("NEGOTIATING");
+        when(jobs.findByParentJobIdAndProfessionalId("parent", "pro-1")).thenReturn(List.of(existing));
+        when(jobs.findById("parent")).thenReturn(Optional.of(parent));
+        JobDto again = service.apply("pro-1", "parent");
+        assertEquals("app_existing", again.getId());
+    }
+
+    @Test
+    void clientAcceptClosesSiblingApplications() {
+        Job child = job("app_1");
+        child.setParentJobId("parent");
+        child.setStatus("NEGOTIATING");
+        child.setProfessionalId("pro-1");
+        child.setClientId("client-1");
+        Job parent = job("parent");
+        parent.setStatus("OPEN");
+        parent.setClientId("client-1");
+        when(jobs.findById("app_1")).thenReturn(Optional.of(child));
+        when(jobs.findById("parent")).thenReturn(Optional.of(parent));
+
+        Job sibling = job("app_2");
+        sibling.setParentJobId("parent");
+        sibling.setStatus("NEGOTIATING");
+        sibling.setProfessionalId("pro-2");
+        when(jobs.findByParentJobIdOrderByCreatedAtDesc("parent")).thenReturn(List.of(child, sibling));
+        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+
+        JobDto accepted = service.clientAccept("client-1", "app_1");
+        assertEquals("ACCEPTED", accepted.getStatus());
+        verify(chat).postSystemMessage(eq("app_2"), eq("Sistema"),
+            org.mockito.ArgumentMatchers.contains("otro profesional"));
+    }
+
+    @Test
     void deleteBlocksAcceptedAndInProgressJobs() {
         Job j = job("j1");
         j.setStatus("ACCEPTED");

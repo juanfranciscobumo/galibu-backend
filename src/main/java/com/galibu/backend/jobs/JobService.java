@@ -169,30 +169,134 @@ public class JobService {
         return JobDto.from(saved);
     }
 
+    /**
+     * Un profesional se postula a una solicitud publicada. Cada postulación es
+     * un job hijo con su propio hilo de chat, de modo que varios profesionales
+     * pueden postularse a la vez y el cliente decide con quién continuar.
+     */
     @Transactional
-    public JobDto acceptJob(String uid, String jobId) {
-        Job job = findOr404(jobId);
+    public JobDto apply(String uid, String jobId) {
+        Job parent = findOr404(jobId);
+        // Reintento sobre una postulación ya creada: responderla tal cual.
+        if (parent.getParentJobId() != null && !parent.getParentJobId().isBlank()) {
+            return JobDto.from(parent);
+        }
         User pro = findUserOr404(uid);
         if (!"PROFESSIONAL".equals(pro.getRole()) && !"BOTH".equals(pro.getRole())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo un profesional puede aceptar solicitudes");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo un profesional puede postularse");
         }
-        if (!"OPEN".equals(job.getStatus())) {
+        if (uid.equals(parent.getClientId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No puedes postularte a tu propia solicitud");
+        }
+        if (!"OPEN".equals(parent.getStatus())
+                || (parent.getProfessionalId() != null && !parent.getProfessionalId().isBlank())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud ya no está disponible");
         }
-        if (uid.equals(job.getClientId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No puedes aceptar tu propia solicitud");
+
+        // Idempotente: si ya existe una postulación activa, devolverla.
+        Job application = null;
+        for (Job existing : jobs.findByParentJobIdAndProfessionalId(parent.getId(), uid)) {
+            if (!"CANCELLED".equals(existing.getStatus()) && !"COMPLETED".equals(existing.getStatus())) {
+                return JobDto.from(existing);
+            }
+            if ("CANCELLED".equals(existing.getStatus())) {
+                application = existing;
+            }
         }
-        if (job.getProfessionalId() != null && !job.getProfessionalId().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud ya tiene profesional asignado");
+        boolean reactivated = application != null;
+        if (application == null) {
+            application = new Job();
+            application.setId("app_" + UUID.randomUUID().toString().replace("-", ""));
+            application.setCreatedAt(System.currentTimeMillis());
         }
-        job.setProfessionalId(pro.getId());
-        job.setProfessionalName(pro.getName());
-        job.setStatus("NEGOTIATING");
+
+        application.setParentJobId(parent.getId());
+        application.setCategory(parent.getCategory());
+        application.setTitle(parent.getTitle());
+        application.setDescription(parent.getDescription());
+        application.setBudgetMin(parent.getBudgetMin());
+        application.setAddress(parent.getAddress());
+        application.setLatitude(parent.getLatitude());
+        application.setLongitude(parent.getLongitude());
+        application.setDepartment(parent.getDepartment());
+        application.setMunicipality(parent.getMunicipality());
+        application.setSuggestedPrice(parent.getSuggestedPrice());
+        application.setProHourlyRate(parent.getProHourlyRate());
+        application.setPhotos(parent.getPhotos());
+        application.setSource("APPLICATION");
+        application.setClientId(parent.getClientId());
+        application.setClientName(parent.getClientName());
+        application.setProfessionalId(pro.getId());
+        application.setProfessionalName(pro.getName());
+        application.setStatus("NEGOTIATING");
+        application.setCompletionRating(null);
+        application.setCompletionReview(null);
+        application.setClientRatingOfPro(null);
+        application.setClientReviewOfPro(null);
+        application.setProRatingOfClient(null);
+        application.setProReviewOfClient(null);
+        Job saved = jobs.save(application);
+
+        chat.postSystemMessage(saved.getId(), "Sistema",
+            (reactivated ? "📩 " + pro.getName() + " volvió a postularse. " : "📩 " + pro.getName() + " envió su postulación. ")
+                + "Pueden acordar el precio y los detalles por el chat.");
+        notifications.notifyUser(parent.getClientId(), "Nuevo profesional postulado",
+            pro.getName() + " se postuló para '" + parent.getTitle() + "'. Revisa su mensaje en el chat.",
+            saved.getId());
+        return JobDto.from(saved);
+    }
+
+    /** Compatibilidad con clientes antiguos: postularse es la nueva forma de tomar. */
+    @Transactional
+    public JobDto acceptJob(String uid, String jobId) {
+        return apply(uid, jobId);
+    }
+
+    @Transactional
+    public JobDto clientAccept(String uid, String jobId) {
+        Job job = findOr404(jobId);
+        if (!uid.equals(job.getClientId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo el cliente puede aceptar al profesional");
+        }
+        if (!"NEGOTIATING".equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud no está en negociación");
+        }
+        if (job.getProfessionalId() == null || job.getProfessionalId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud aún no tiene profesional asignado");
+        }
+        Job parent = null;
+        if (job.getParentJobId() != null && !job.getParentJobId().isBlank()) {
+            parent = jobs.findById(job.getParentJobId()).orElse(null);
+            if (parent != null && !"OPEN".equals(parent.getStatus())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Ya elegiste a un profesional para esta solicitud");
+            }
+        }
+        job.setStatus("ACCEPTED");
         Job saved = jobs.save(job);
         chat.postSystemMessage(jobId, "Sistema",
-            "🤝 " + pro.getName() + " ha tomado esta solicitud. Pueden acordar el precio y los detalles por el chat.");
-        notifications.notifyUser(job.getClientId(), "Profesional interesado",
-            pro.getName() + " ha tomado tu solicitud '" + job.getTitle() + "'. Pueden acordar el precio por el chat.", jobId);
+            "✅ " + job.getClientName() + " aceptó la propuesta. El profesional puede iniciar el servicio.");
+        notifications.notifyUser(job.getProfessionalId(), "Propuesta aceptada",
+            "El cliente aceptó tu propuesta para '" + job.getTitle() + "'. Puedes iniciar el servicio.", jobId);
+
+        // La solicitud padre queda cubierta y las demás postulaciones se cierran.
+        if (parent != null) {
+            parent.setStatus("ASSIGNED");
+            jobs.save(parent);
+            for (Job sibling : jobs.findByParentJobIdOrderByCreatedAtDesc(parent.getId())) {
+                if (sibling.getId().equals(job.getId())) continue;
+                if (!"NEGOTIATING".equals(sibling.getStatus()) && !"ACCEPTED".equals(sibling.getStatus())) continue;
+                sibling.setStatus("CANCELLED");
+                sibling.setCompletionReview("El cliente eligió a otro profesional");
+                jobs.save(sibling);
+                chat.postSystemMessage(sibling.getId(), "Sistema",
+                    "El cliente eligió a otro profesional para esta solicitud. La postulación quedó cerrada.");
+                if (sibling.getProfessionalId() != null && !sibling.getProfessionalId().isBlank()) {
+                    notifications.notifyUser(sibling.getProfessionalId(), "Postulación no seleccionada",
+                        "El cliente eligió a otro profesional para '" + sibling.getTitle() + "'.", sibling.getId());
+                }
+            }
+        }
         return JobDto.from(saved);
     }
 
@@ -203,6 +307,7 @@ public class JobService {
         if ("COMPLETED".equals(job.getStatus()) || "CANCELLED".equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud ya está cerrada");
         }
+        String previousStatus = job.getStatus();
         User actor = findUserOr404(uid);
         job.setStatus("CANCELLED");
         Job saved = jobs.save(job);
@@ -214,6 +319,35 @@ public class JobService {
             notifications.notifyUser(otherId, "Servicio cancelado",
                 "La solicitud '" + job.getTitle() + "' ha sido cancelada por " + actor.getName() + ".", jobId);
         }
+
+        if (job.getParentJobId() != null && !job.getParentJobId().isBlank()) {
+            // Postulación cancelada: si aún no estaba aceptada, la solicitud
+            // padre vuelve a estar abierta; si ya había sido elegida, se cierra.
+            jobs.findById(job.getParentJobId()).ifPresent(parent -> {
+                if ("ASSIGNED".equals(parent.getStatus())) {
+                    parent.setStatus("ACCEPTED".equals(previousStatus) ? "OPEN" : "CLOSED");
+                    jobs.save(parent);
+                }
+            });
+        } else {
+            // Cancelar la solicitud padre cierra todas sus postulaciones activas.
+            for (Job child : jobs.findByParentJobIdOrderByCreatedAtDesc(job.getId())) {
+                if (!"NEGOTIATING".equals(child.getStatus()) && !"ACCEPTED".equals(child.getStatus())
+                        && !"IN_PROGRESS".equals(child.getStatus())) {
+                    continue;
+                }
+                child.setStatus("CANCELLED");
+                child.setCompletionReview("La solicitud fue cancelada");
+                jobs.save(child);
+                chat.postSystemMessage(child.getId(), "Sistema",
+                    actor.getName() + " canceló la solicitud. La postulación quedó cerrada.");
+                if (child.getProfessionalId() != null && !child.getProfessionalId().isBlank()) {
+                    notifications.notifyUser(child.getProfessionalId(), "Solicitud cancelada",
+                        "La solicitud '" + child.getTitle() + "' fue cancelada por " + actor.getName() + ".",
+                        child.getId());
+                }
+            }
+        }
         return JobDto.from(saved);
     }
 
@@ -223,8 +357,17 @@ public class JobService {
         if (!uid.equals(job.getClientId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo el cliente puede eliminar su solicitud");
         }
+        if (job.getParentJobId() != null && !job.getParentJobId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Una postulación no se elimina: cancélala para cerrar la conversación.");
+        }
+        if (jobs.existsByParentJobId(job.getId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Tienes postulaciones en esta solicitud. Cancélala para cerrar las conversaciones.");
+        }
         if ("NEGOTIATING".equals(job.getStatus()) || "ACCEPTED".equals(job.getStatus())
-            || "IN_PROGRESS".equals(job.getStatus()) || "COMPLETED".equals(job.getStatus())) {
+            || "IN_PROGRESS".equals(job.getStatus()) || "COMPLETED".equals(job.getStatus())
+            || "ASSIGNED".equals(job.getStatus()) || "CLOSED".equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "No puedes eliminar una solicitud aceptada, en curso o completada. Cancelarla si ya no la necesitas.");
         }
@@ -235,6 +378,11 @@ public class JobService {
     public JobDto startService(String uid, String jobId) {
         Job job = findOr404(jobId);
         requireAssignedProfessional(uid, job);
+        boolean isApplication = job.getParentJobId() != null && !job.getParentJobId().isBlank();
+        if (isApplication && !"ACCEPTED".equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "El cliente debe aceptar tu postulación antes de iniciar el servicio");
+        }
         if (!"ACCEPTED".equals(job.getStatus()) && !"NEGOTIATING".equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Solo se puede iniciar un servicio aceptado o en negociación");
         }
@@ -274,6 +422,7 @@ public class JobService {
         job.setStatus("COMPLETED");
         job.setCounterOfferSender(null);
         jobs.save(job);
+        closeParentIfApplication(job);
         chat.postSystemMessage(jobId, "Sistema",
             "¡Servicio finalizado! Ya puedes calificar el trabajo realizado.");
         notifications.notifyUser(job.getClientId(), "Servicio finalizado",
@@ -304,6 +453,19 @@ public class JobService {
         }
     }
 
+    /** Cuando se completa una postulación, la solicitud padre queda cerrada. */
+    private void closeParentIfApplication(Job child) {
+        if (child.getParentJobId() == null || child.getParentJobId().isBlank()) {
+            return;
+        }
+        jobs.findById(child.getParentJobId()).ifPresent(parent -> {
+            if ("ASSIGNED".equals(parent.getStatus())) {
+                parent.setStatus("CLOSED");
+                jobs.save(parent);
+            }
+        });
+    }
+
     /**
      * No se permite una solicitud activa con igual categoría y ubicación
      * (departamento + municipio + dirección, insensible a mayúsculas).
@@ -317,7 +479,13 @@ public class JobService {
             return;
         }
         for (Job j : jobs.findByClientIdOrderByCreatedAtDesc(uid)) {
-            if ("COMPLETED".equals(j.getStatus()) || "CANCELLED".equals(j.getStatus())) {
+            // Las postulaciones heredan la ubicación del padre: no cuentan como
+            // solicitudes propias para el control de duplicados.
+            if (j.getParentJobId() != null && !j.getParentJobId().isBlank()) {
+                continue;
+            }
+            if ("COMPLETED".equals(j.getStatus()) || "CANCELLED".equals(j.getStatus())
+                    || "CLOSED".equals(j.getStatus())) {
                 continue;
             }
             if (req.getCategory() != null && req.getCategory().equalsIgnoreCase(j.getCategory())

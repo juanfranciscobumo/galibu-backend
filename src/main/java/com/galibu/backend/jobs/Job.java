@@ -59,6 +59,13 @@ public class Job {
     @Column(name = "professional_name", length = 120)
     private String professionalName;
 
+    /**
+     * Padre de una postulación: la solicitud publicada (OPEN) de la que este
+     * job hijo representa la conversación con un profesional concreto.
+     */
+    @Column(name = "parent_job_id", length = 64)
+    private String parentJobId;
+
     @Column(name = "final_price")
     private Double finalPrice;
 

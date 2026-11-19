@@ -25,6 +25,7 @@ public class JobDto {
     public String clientName;
     public String professionalId;
     public String professionalName;
+    public String parentJobId;
     public Double finalPrice;
     public long createdAt;
     public Float completionRating;
@@ -58,6 +59,7 @@ public class JobDto {
         dto.setClientName(job.getClientName());
         dto.setProfessionalId(job.getProfessionalId());
         dto.setProfessionalName(job.getProfessionalName());
+        dto.setParentJobId(job.getParentJobId());
         dto.setFinalPrice(job.getFinalPrice());
         dto.setCreatedAt(job.getCreatedAt());
         dto.setCompletionRating(job.getCompletionRating());

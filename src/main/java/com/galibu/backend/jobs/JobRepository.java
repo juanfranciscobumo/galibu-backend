@@ -17,6 +17,12 @@ public interface JobRepository extends JpaRepository<Job, String> {
 
     List<Job> findByStatusInOrderByCreatedAtDesc(Collection<String> statuses);
 
+    List<Job> findByParentJobIdOrderByCreatedAtDesc(String parentJobId);
+
+    List<Job> findByParentJobIdAndProfessionalId(String parentJobId, String professionalId);
+
+    boolean existsByParentJobId(String parentJobId);
+
     /**
      * Servicios que consumen la cuota gratuita del profesional. Se cuentan los
      * trabajos que llegaron a estar aceptados, no solo los completados, para que

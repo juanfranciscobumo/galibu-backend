@@ -93,6 +93,18 @@ public class JobController {
         return service.acceptJob(auth.getName(), id);
     }
 
+    @PostMapping("/{id}/apply")
+    public JobDto apply(Authentication auth, @PathVariable String id) {
+        log.info("jobs apply userId={} jobId={}", auth.getName(), id);
+        return service.apply(auth.getName(), id);
+    }
+
+    @PostMapping("/{id}/client-accept")
+    public JobDto clientAccept(Authentication auth, @PathVariable String id) {
+        log.info("jobs client-accept userId={} jobId={}", auth.getName(), id);
+        return service.clientAccept(auth.getName(), id);
+    }
+
     @PostMapping("/{id}/start")
     public JobDto startService(Authentication auth, @PathVariable String id) {
         log.info("jobs startService userId={} jobId={}", auth.getName(), id);
