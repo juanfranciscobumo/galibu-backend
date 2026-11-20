@@ -54,7 +54,7 @@ public class CreateJobRequest {
     public String source;
 
     @Size(max = 5000000)
-    public String photos; // permite varias fotos base64
+    public String photos;
 
     public Double proHourlyRate;
 
