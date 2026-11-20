@@ -31,6 +31,13 @@ jobs:
           port: ${{ secrets.OCI_PORT }}
           script: |
             set -e
+            # Limpieza preventiva de espacio antes de construir la imagen.
+            sudo podman system prune -af || true
+            sudo podman image prune -af || true
+            rm -rf ~/.gradle/wrapper/dists ~/.gradle/caches || true
+            sudo find /var/log -type f -name "*.log" -size +50M -delete || true
+            sudo journalctl --vacuum-size=100M || true
+            cd ~/galibu-backend 2>/dev/null && rm -rf build .gradle || true
             cd ~/galibu-backend
             git pull origin main
             # Podman en Oracle Linux 9 (con prefijo sudo)
