@@ -29,6 +29,7 @@ public class RequestTraceStore {
     private static final int MAX_CALLS_PER_TRACE = 40;
     private static final int MAX_BODY_CHARS = 8000;
     private static final int MAX_LONG_TEXT = 1200;
+    private static final int MAX_CAPTURE_BYTES = 512 * 1024;
 
     private static final Pattern FALLBACK_SECRET = Pattern.compile(
         "(?i)(\"(?:password|token|accessToken|refreshToken|idToken|secret|authorization)\"\\s*:\\s*)\"[^\"]*\"");
@@ -173,7 +174,7 @@ public class RequestTraceStore {
             || type.contains("octet-stream") || type.contains("pdf") || type.contains("multipart/")) {
             return "[contenido binario · " + body.length + " bytes]";
         }
-        if (body.length > MAX_BODY_CHARS * 4) {
+        if (body.length > MAX_CAPTURE_BYTES) {
             return "[cuerpo omitido · " + body.length + " bytes]";
         }
         String text = new String(body, StandardCharsets.UTF_8);
