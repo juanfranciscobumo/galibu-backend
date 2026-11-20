@@ -53,7 +53,7 @@ public class CreateJobRequest {
     @Size(max = 20)
     public String source;
 
-    @Size(max = 200000)
+    @Size(max = 5000000)
     public String photos;
 
     public Double proHourlyRate;
