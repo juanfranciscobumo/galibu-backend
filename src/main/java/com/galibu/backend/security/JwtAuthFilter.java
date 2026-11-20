@@ -38,19 +38,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             try {
                 Claims claims = jwtService.parseValidAccessToken(token);
                 String uid = claims.getSubject();
-                // El rol se resuelve siempre desde la base de datos para no quedar
-                // desactualizado tras una expansión de rol (addRole) aunque el JWT
-                // antiguo siga vivo dentro de su ventana de validez.
-                String role = null;
-                try {
-                    User user = users.findById(uid).orElse(null);
-                    if (user != null) {
-                        role = user.getRole();
+                // El JWT ya incluye el rol. Se usa directamente para evitar una
+                // consulta a la base de datos en cada request (latencia). Solo se
+                // consulta la BD si el token no trae rol (tokens antiguos).
+                String role = claims.get("role", String.class);
+                if (role == null || role.isBlank()) {
+                    try {
+                        User user = users.findById(uid).orElse(null);
+                        if (user != null) {
+                            role = user.getRole();
+                        }
+                    } catch (Exception ignored) {
                     }
-                } catch (Exception ignored) {
-                }
-                if (role == null) {
-                    role = claims.get("role", String.class);
                 }
                 var authorities = role == null
                     ? List.<SimpleGrantedAuthority>of()

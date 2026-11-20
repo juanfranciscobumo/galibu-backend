@@ -247,12 +247,11 @@ public class AppStatsService {
                 + "select client_id as uid from jobs where updated_at >= ? and updated_at < ?"
                 + " union all select professional_id as uid from jobs where professional_id is not null"
                 + " and updated_at >= ? and updated_at < ?"
-                + " union all select professional_id as uid from bids where created_at >= ? and created_at < ?"
                 + " union all select rater_id as uid from ratings where created_at >= ? and created_at < ?"
                 + " union all select id as uid from users where updated_at >= ? and updated_at < ?"
                 + ") activity",
             Long.class,
-            from, to, from, to, from, to, from, to, from, to);
+            from, to, from, to, from, to, from, to);
         return value == null ? 0 : value;
     }
 

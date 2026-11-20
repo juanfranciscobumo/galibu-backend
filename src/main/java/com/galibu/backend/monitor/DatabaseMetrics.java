@@ -15,7 +15,7 @@ public class DatabaseMetrics {
 
     private static final long CACHE_MS = 1500;
     private static final List<String> MAIN_TABLES =
-        List.of("users", "jobs", "bids", "ratings", "wallet_transactions", "devices");
+        List.of("users", "jobs", "ratings", "wallet_transactions", "devices", "chat_messages");
 
     private final DataSource dataSource;
     private final JdbcTemplate jdbc;
