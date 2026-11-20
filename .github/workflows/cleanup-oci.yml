@@ -1,0 +1,32 @@
+name: Limpieza de espacio en OCI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Limpiar espacio por SSH a OCI
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          port: ${{ secrets.OCI_PORT }}
+          script: |
+            set -e
+            echo "=== Espacio antes ==="
+            df -h
+            # Limpiar imágenes y contenedores antiguos de Podman
+            sudo podman system prune -af || true
+            sudo podman image prune -af || true
+            # Limpiar caché de Gradle
+            rm -rf ~/.gradle/wrapper/dists ~/.gradle/caches
+            # Limpiar logs antiguos
+            sudo find /var/log -type f -name "*.log" -size +50M -delete || true
+            sudo journalctl --vacuum-size=100M || true
+            # Limpiar builds antiguos del repo
+            cd ~/galibu-backend 2>/dev/null && rm -rf build .gradle || true
+            echo "=== Espacio después ==="
+            df -h
