@@ -1,4 +1,23 @@
 services:
+  db:
+    image: mysql:8.4
+    container_name: galibu-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: galibu
+      MYSQL_USER: galibu
+      MYSQL_PASSWORD: galibu_local_2026
+      MYSQL_ROOT_PASSWORD: galibu_root_2026
+    volumes:
+      - galibu_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pgalibu_root_2026"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - galibu
+
   backend:
     build: .
     container_name: galibu-backend
@@ -7,3 +26,18 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    environment:
+      - DB_URL=jdbc:mysql://db:3306/galibu?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=America/Bogota&useUnicode=true&characterEncoding=UTF-8
+      - DB_USER=galibu
+      - DB_PASSWORD=galibu_local_2026
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - galibu
+
+volumes:
+  galibu_db_data:
+
+networks:
+  galibu:

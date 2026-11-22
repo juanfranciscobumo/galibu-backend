@@ -40,11 +40,20 @@ jobs:
             cd ~/galibu-backend 2>/dev/null && rm -rf build .gradle || true
             cd ~/galibu-backend
             git pull origin main
-            # Podman en Oracle Linux 9 (con prefijo sudo)
-            sudo podman build -t galibu-backend:latest .
-            # Recrear el contenedor para que use la imagen recién construida.
-            sudo podman rm -f galibu-backend || true
-            sudo podman run -d --name galibu-backend --restart=unless-stopped -p 8080:8080 --env-file .env galibu-backend:latest
+            # Podman en Oracle Linux 9 (con prefijo sudo). Se usa compose para
+            # levantar la BD (mysql) y el backend en la misma VM (latencia ~0).
+            if command -v podman-compose >/dev/null 2>&1; then
+              sudo podman-compose down || true
+              sudo podman-compose up -d --build
+            elif podman compose version >/dev/null 2>&1; then
+              sudo podman compose down || true
+              sudo podman compose up -d --build
+            else
+              echo "podman-compose no disponible; instalando..."
+              sudo dnf install -y podman-compose || sudo pip3 install podman-compose
+              sudo podman-compose down || true
+              sudo podman-compose up -d --build
+            fi
             sudo podman ps
             # Spring tarda en arrancar: reintentar el health check.
             for i in $(seq 1 30); do
