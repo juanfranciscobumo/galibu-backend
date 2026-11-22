@@ -1,6 +1,8 @@
 name: Deploy a Oracle Cloud (OCI)
 
-# Despliegue automático del backend (solo backend, DB externa) en la VM OCI.
+# Despliegue automático del backend en la VM OCI.
+# La base de datos MySQL corre en un contenedor aparte, en la misma VM y en la
+# misma red de podman (`galibu`), por lo que la latencia de BD es ~0 ms.
 # Requiere Secrets en GitHub:
 #   OCI_HOST=129.38.111.104
 #   OCI_USER=opc
@@ -17,6 +19,7 @@ on:
       - "build.gradle"
       - "settings.gradle"
       - "gradle/**"
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -29,10 +32,11 @@ jobs:
           username: ${{ secrets.OCI_USER }}
           key: ${{ secrets.OCI_SSH_KEY }}
           port: ${{ secrets.OCI_PORT }}
+          command_timeout: 30m
+          script_stop: true
           script: |
             set -e
             # Limpieza preventiva de espacio antes de construir la imagen.
-            sudo podman system prune -af || true
             sudo podman image prune -af || true
             rm -rf ~/.gradle/wrapper/dists ~/.gradle/caches || true
             sudo find /var/log -type f -name "*.log" -size +50M -delete || true
@@ -40,25 +44,47 @@ jobs:
             cd ~/galibu-backend 2>/dev/null && rm -rf build .gradle || true
             cd ~/galibu-backend
             git pull origin main
-            # Podman en Oracle Linux 9 (con prefijo sudo). Se usa compose para
-            # levantar la BD (mysql) y el backend en la misma VM (latencia ~0).
-            if command -v podman-compose >/dev/null 2>&1; then
-              sudo podman-compose down || true
-              sudo podman-compose up -d --build
-            elif podman compose version >/dev/null 2>&1; then
-              sudo podman compose down || true
-              sudo podman compose up -d --build
+
+            # --- Red compartida backend <-> base de datos ---
+            sudo podman network exists galibu >/dev/null 2>&1 || sudo podman network create galibu
+
+            # --- MySQL local (se crea solo la primera vez; los datos viven en el volumen) ---
+            if ! sudo podman container exists galibu-db >/dev/null 2>&1; then
+              echo "Creando MySQL local..."
+              sudo podman volume create galibu_db_data >/dev/null 2>&1 || true
+              sudo podman run -d --name galibu-db --restart=unless-stopped --network galibu \
+                -e MYSQL_DATABASE=galibu \
+                -e MYSQL_USER=galibu \
+                -e MYSQL_PASSWORD=galibu_local_2026 \
+                -e MYSQL_ROOT_PASSWORD=galibu_root_2026 \
+                -v galibu_db_data:/var/lib/mysql \
+                mysql:8.4
             else
-              echo "podman-compose no disponible; instalando..."
-              sudo dnf install -y podman-compose || sudo pip3 install podman-compose
-              sudo podman-compose down || true
-              sudo podman-compose up -d --build
+              sudo podman start galibu-db >/dev/null 2>&1 || true
             fi
+
+            # Esperar a que MySQL acepte conexiones (primer arranque tarda).
+            for i in $(seq 1 60); do
+              if sudo podman exec galibu-db mysqladmin ping -uroot -pgalibu_root_2026 >/dev/null 2>&1; then
+                echo "MySQL listo"
+                break
+              fi
+              sleep 5
+            done
+
+            # --- Backend ---
+            sudo podman build -t galibu-backend:latest .
+            sudo podman rm -f galibu-backend >/dev/null 2>&1 || true
+            sudo podman run -d --name galibu-backend --restart=unless-stopped \
+              --network galibu -p 8080:8080 --env-file .env galibu-backend:latest
             sudo podman ps
+
             # Spring tarda en arrancar: reintentar el health check.
-            for i in $(seq 1 30); do
+            for i in $(seq 1 40); do
               if curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1; then
                 echo "backend UP"
+                # Info útil del origen de datos (sin credenciales).
+                sudo podman logs --tail 40 galibu-backend 2>&1 | grep -oE "jdbc:mysql://[^/?]+/[^? ]*" | tail -1 || true
                 exit 0
               fi
               sleep 5
