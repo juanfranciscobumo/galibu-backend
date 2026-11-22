@@ -9,6 +9,8 @@ import com.galibu.backend.users.User;
 import com.galibu.backend.users.UserRepository;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +20,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class ChatService {
 
     private final ChatMessageRepository messages;
+    // Caché corto de trabajos para evitar una consulta a la BD en cada
+    // operación de chat (la BD remota tiene ~300 ms de latencia).
+    private final ConcurrentMap<String, Job> jobCache = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Long> jobCacheTime = new ConcurrentHashMap<>();
+    private static final long JOB_CACHE_TTL_MS = 10_000L;
     private final JobRepository jobs;
     private final UserRepository users;
     private final NotificationService notifications;
@@ -31,14 +38,34 @@ public class ChatService {
     }
 
     private Job requireParticipant(String uid, String jobId) {
-        Job job = jobs.findById(jobId).orElseThrow(() ->
-            new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitud no existe"));
+        Job job = cachedJob(jobId);
+        if (job == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitud no existe");
+        }
         boolean isClient = uid.equals(job.getClientId());
         boolean isPro = job.getProfessionalId() != null && uid.equals(job.getProfessionalId());
         if (!isClient && !isPro) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No participas en esta conversación");
         }
         return job;
+    }
+
+    private Job cachedJob(String jobId) {
+        long now = System.currentTimeMillis();
+        Long cachedAt = jobCacheTime.get(jobId);
+        Job cached = jobCache.get(jobId);
+        if (cached != null && cachedAt != null && (now - cachedAt) < JOB_CACHE_TTL_MS) {
+            return cached;
+        }
+        Job fresh = jobs.findById(jobId).orElse(null);
+        if (fresh != null) {
+            jobCache.put(jobId, fresh);
+            jobCacheTime.put(jobId, now);
+        } else {
+            jobCache.remove(jobId);
+            jobCacheTime.remove(jobId);
+        }
+        return fresh;
     }
 
     @Transactional(readOnly = true)
