@@ -1,0 +1,28 @@
+name: Respaldo de BD
+
+# Respaldo diario de la BD local (contenedor galibu-db en la VM OCI).
+# Los archivos quedan en ~/galibu-backups/ y se conservan los últimos 14.
+# Lógica: scripts/backup-db.sh
+on:
+  schedule:
+    - cron: "0 7 * * *" # 02:00 hora Colombia
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Respaldar BD
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          port: ${{ secrets.OCI_PORT }}
+          command_timeout: 20m
+          script_stop: true
+          script: |
+            cd ~/galibu-backend
+            git fetch origin main
+            git pull --ff-only origin main
+            bash scripts/backup-db.sh

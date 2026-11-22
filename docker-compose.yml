@@ -1,3 +1,6 @@
+# Solo para desarrollo local (docker/podman compose).
+# En producción (VM OCI) NO se usa: scripts/deploy.sh levanta los contenedores
+# con podman puro (red `galibu`, backend + mysql en la misma VM).
 services:
   db:
     image: mysql:8.4
