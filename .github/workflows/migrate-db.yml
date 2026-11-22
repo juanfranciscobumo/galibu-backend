@@ -93,7 +93,7 @@ jobs:
                 -e MYSQL_PASSWORD="$LOCAL_PASS" \
                 -e MYSQL_ROOT_PASSWORD="$LOCAL_ROOT_PASS" \
                 -v galibu_db_data:/var/lib/mysql \
-                mysql:8.4
+                docker.io/library/mysql:8.4
             else
               sudo podman start galibu-db >/dev/null 2>&1 || true
             fi
@@ -110,7 +110,7 @@ jobs:
             # ---------- 3. Volcado de la BD remota (queda respaldo en la VM) ----------
             echo "Volcando BD remota..."
             dump_db() {
-              sudo podman run --rm -e MYSQL_PWD="$RPASS" mysql:8.4 \
+              sudo podman run --rm -e MYSQL_PWD="$RPASS" docker.io/library/mysql:8.4 \
                 mysqldump -h "$RHOST" -P "$RPORT" -u "$RUSER" "$@" "$RDB"
             }
 

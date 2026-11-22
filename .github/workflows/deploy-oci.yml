@@ -58,7 +58,7 @@ jobs:
                 -e MYSQL_PASSWORD=galibu_local_2026 \
                 -e MYSQL_ROOT_PASSWORD=galibu_root_2026 \
                 -v galibu_db_data:/var/lib/mysql \
-                mysql:8.4
+                docker.io/library/mysql:8.4
             else
               sudo podman start galibu-db >/dev/null 2>&1 || true
             fi
