@@ -1,0 +1,35 @@
+name: Diagnóstico de push (FCM)
+
+# Diagnóstico temporal: estado de Firebase Admin y tokens de dispositivo.
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Diagnóstico FCM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          port: ${{ secrets.OCI_PORT }}
+          command_timeout: 10m
+          script_stop: false
+          script: |
+            cd ~/galibu-backend
+            if grep -q '^FIREBASE_SERVICE_ACCOUNT_JSON=' .env; then
+              echo "FIREBASE_SERVICE_ACCOUNT_JSON: presente ($(grep '^FIREBASE_SERVICE_ACCOUNT_JSON=' .env | wc -c) bytes de línea)"
+            else
+              echo "FIREBASE_SERVICE_ACCOUNT_JSON: AUSENTE"
+            fi
+            if grep -q '^FIREBASE_SERVICE_ACCOUNT_PATH=' .env; then
+              echo "FIREBASE_SERVICE_ACCOUNT_PATH: presente"
+            else
+              echo "FIREBASE_SERVICE_ACCOUNT_PATH: ausente"
+            fi
+            echo "--- logs FCM/PUSH ---"
+            sudo podman logs galibu-backend 2>&1 | grep -E "\[FCM\]|\[PUSH\]" | tail -20 || echo "sin líneas FCM/PUSH"
+            echo "--- devices ---"
+            sudo podman exec galibu-db mysql -uroot -p"galibu_root_2026" galibu -e "select d.id, d.user_id, concat(left(d.fcm_token, 18), '...') as token, d.platform, from_unixtime(d.updated_at/1000) as actualizado, u.email from devices d left join users u on u.id = d.user_id order by d.updated_at desc"
