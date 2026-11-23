@@ -1,0 +1,32 @@
+name: Eliminar una solicitud
+
+# Elimina una solicitud concreta y sus datos dependientes.
+# Genera un respaldo completo de la BD antes de borrar.
+# Lógica: scripts/delete-job.sh
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "ID de la solicitud a eliminar"
+        required: true
+        type: string
+
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Eliminar solicitud
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          port: ${{ secrets.OCI_PORT }}
+          command_timeout: 15m
+          script_stop: true
+          script: |
+            cd ~/galibu-backend
+            git fetch origin main
+            git checkout -- . 2>/dev/null || true
+            git pull --ff-only origin main
+            CONFIRM=YES bash scripts/delete-job.sh "${{ github.event.inputs.job_id }}"
