@@ -24,7 +24,7 @@ public class ChatService {
     // operación de chat (la BD remota tiene ~300 ms de latencia).
     private final ConcurrentMap<String, Job> jobCache = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Long> jobCacheTime = new ConcurrentHashMap<>();
-    private static final long JOB_CACHE_TTL_MS = 10_000L;
+    private static final long JOB_CACHE_TTL_MS = 3_000L;
     private final JobRepository jobs;
     private final UserRepository users;
     private final NotificationService notifications;
