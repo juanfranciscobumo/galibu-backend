@@ -58,8 +58,7 @@ public class FirebaseInitializer {
                 .setCredentials(credentials)
                 .build();
             FirebaseApp.initializeApp(options);
-            log.info("[FCM] Firebase Admin SDK inicializado correctamente (projectId={}).",
-                FirebaseApp.getInstance().getOptions().getProjectId());
+            log.info("[FCM] Firebase Admin SDK inicializado correctamente. Push habilitado.");
         } catch (Exception e) {
             log.error("[FCM] Error inicializando Firebase Admin SDK: {}", e.getMessage(), e);
         }
