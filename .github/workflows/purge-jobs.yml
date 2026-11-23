@@ -1,0 +1,27 @@
+name: Purgar solicitudes pendientes o en negociación
+
+# Elimina las solicitudes OPEN y NEGOTIATING (y sus postulaciones hijas).
+# Genera un respaldo completo de la BD antes de borrar.
+# Lógica: scripts/purge-jobs.sh
+on:
+  workflow_dispatch:
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Purgar solicitudes
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          port: ${{ secrets.OCI_PORT }}
+          command_timeout: 15m
+          script_stop: true
+          script: |
+            cd ~/galibu-backend
+            git fetch origin main
+            git checkout -- . 2>/dev/null || true
+            git pull --ff-only origin main
+            CONFIRM=YES bash scripts/purge-jobs.sh
