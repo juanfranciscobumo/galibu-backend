@@ -15,13 +15,7 @@ public class DeviceService {
 
     @Transactional
     public void registerToken(String userId, String fcmToken, String platform) {
-        tokens.deleteByFcmToken(fcmToken);
-        DeviceToken token = new DeviceToken();
-        token.setUserId(userId);
-        token.setFcmToken(fcmToken);
-        token.setPlatform(platform);
-        token.setUpdatedAt(System.currentTimeMillis());
-        tokens.save(token);
+        tokens.upsertToken(userId, fcmToken, platform, System.currentTimeMillis());
     }
 
     @Transactional

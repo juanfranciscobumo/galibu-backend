@@ -9,6 +9,7 @@ name: Deploy a Oracle Cloud (OCI)
 #   OCI_USER=opc
 #   OCI_SSH_KEY=<clave privada completa, con cabeceras BEGIN/END>
 #   OCI_PORT=22
+#   FIREBASE_SERVICE_ACCOUNT_JSON=<service-account.json en una sola línea>
 on:
   push:
     branches: [main]
@@ -28,6 +29,7 @@ jobs:
     steps:
       - name: Deploy por SSH a OCI
         uses: appleboy/ssh-action@v1.0.3
+        envs: FIREBASE_SERVICE_ACCOUNT_JSON
         with:
           host: ${{ secrets.OCI_HOST }}
           username: ${{ secrets.OCI_USER }}
@@ -36,7 +38,18 @@ jobs:
           command_timeout: 40m
           script_stop: true
           script: |
+            set -e
             cd ~/galibu-backend
             git fetch origin main
             git pull --ff-only origin main
+            # Firebase Admin: se inyecta el service account en .env en cada deploy
+            # (el valor nunca se imprime). Así los push quedan habilitados.
+            if [ -n "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" ]; then
+              grep -v '^FIREBASE_SERVICE_ACCOUNT_JSON=' .env > .env.tmp || true
+              mv .env.tmp .env
+              printf 'FIREBASE_SERVICE_ACCOUNT_JSON=%s\n' "$FIREBASE_SERVICE_ACCOUNT_JSON" >> .env
+              echo "FCM: credenciales inyectadas en .env"
+            else
+              echo "FCM: secret FIREBASE_SERVICE_ACCOUNT_JSON no disponible"
+            fi
             bash scripts/deploy.sh
