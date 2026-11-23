@@ -50,6 +50,12 @@ public class ChatService {
         return job;
     }
 
+    public void invalidateJobCache(String jobId) {
+        if (jobId == null || jobId.isBlank()) return;
+        jobCache.remove(jobId);
+        jobCacheTime.remove(jobId);
+    }
+
     private Job cachedJob(String jobId) {
         long now = System.currentTimeMillis();
         Long cachedAt = jobCacheTime.get(jobId);

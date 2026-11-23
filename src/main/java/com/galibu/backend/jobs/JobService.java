@@ -150,6 +150,7 @@ public class JobService {
             } else {
                 notifications.notifyUser(saved.getProfessionalId(), "Nueva contratación directa",
                     "Te han contratado directamente para '" + saved.getTitle() + "'. Revisa la solicitud.", saved.getId());
+                chat.invalidateJobCache(saved.getId());
             }
         } else {
             // Nueva solicitud abierta: avisar a profesionales con categoría compatible
@@ -243,6 +244,8 @@ public class JobService {
         notifications.notifyUser(parent.getClientId(), "Nuevo profesional postulado",
             pro.getName() + " se postuló para '" + parent.getTitle() + "'. Revisa su mensaje en el chat.",
             saved.getId());
+        chat.invalidateJobCache(saved.getId());
+        chat.invalidateJobCache(parent.getId());
         return JobDto.from(saved);
     }
 
@@ -291,12 +294,15 @@ public class JobService {
                 jobs.save(sibling);
                 chat.postSystemMessage(sibling.getId(), "Sistema",
                     "El cliente eligió a otro profesional para esta solicitud. La postulación quedó cerrada.");
+                chat.invalidateJobCache(sibling.getId());
                 if (sibling.getProfessionalId() != null && !sibling.getProfessionalId().isBlank()) {
                     notifications.notifyUser(sibling.getProfessionalId(), "Postulación no seleccionada",
                         "El cliente eligió a otro profesional para '" + sibling.getTitle() + "'.", sibling.getId());
                 }
             }
         }
+        if (parent != null) chat.invalidateJobCache(parent.getId());
+        chat.invalidateJobCache(jobId);
         return JobDto.from(saved);
     }
 
@@ -341,6 +347,7 @@ public class JobService {
                 jobs.save(child);
                 chat.postSystemMessage(child.getId(), "Sistema",
                     actor.getName() + " canceló la solicitud. La postulación quedó cerrada.");
+                chat.invalidateJobCache(child.getId());
                 if (child.getProfessionalId() != null && !child.getProfessionalId().isBlank()) {
                     notifications.notifyUser(child.getProfessionalId(), "Solicitud cancelada",
                         "La solicitud '" + child.getTitle() + "' fue cancelada por " + actor.getName() + ".",
@@ -348,6 +355,8 @@ public class JobService {
                 }
             }
         }
+        chat.invalidateJobCache(jobId);
+        if (job.getParentJobId() != null && !job.getParentJobId().isBlank()) chat.invalidateJobCache(job.getParentJobId());
         return JobDto.from(saved);
     }
 
@@ -372,6 +381,7 @@ public class JobService {
                 "No puedes eliminar una solicitud aceptada, en curso o completada. Cancelarla si ya no la necesitas.");
         }
         jobs.delete(job);
+        chat.invalidateJobCache(jobId);
     }
 
     @Transactional
@@ -391,6 +401,8 @@ public class JobService {
         Job saved = jobs.save(job);
         chat.postSystemMessage(jobId, "Sistema",
             "¡El profesional inició el servicio! El trabajo está en progreso.");
+        chat.invalidateJobCache(jobId);
+        if (job.getParentJobId() != null && !job.getParentJobId().isBlank()) chat.invalidateJobCache(job.getParentJobId());
         notifications.notifyUser(job.getClientId(), "Servicio iniciado",
             "El profesional ha comenzado el trabajo '" + job.getTitle() + "'.", jobId);
         return JobDto.from(saved);
@@ -435,6 +447,8 @@ public class JobService {
         if (shouldRate) {
             rateIgnoringDuplicates(uid, jobId, stars, comment);
         }
+        chat.invalidateJobCache(jobId);
+        if (job.getParentJobId() != null && !job.getParentJobId().isBlank()) chat.invalidateJobCache(job.getParentJobId());
         return JobDto.from(findOr404(jobId));
     }
 
