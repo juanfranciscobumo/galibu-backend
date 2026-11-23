@@ -7,6 +7,8 @@ import jakarta.annotation.PostConstruct;
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -24,6 +26,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class FirebaseInitializer {
+
+    private static final Logger log = LoggerFactory.getLogger(FirebaseInitializer.class);
 
     @Value("${FIREBASE_SERVICE_ACCOUNT_JSON:}")
     private String serviceAccountJson;
@@ -46,7 +50,7 @@ public class FirebaseInitializer {
             }
 
             if (credentials == null) {
-                System.out.println("[FCM] Sin credenciales de servicio: push deshabilitado (polling de respaldo).");
+                log.warn("[FCM] Sin credenciales de servicio: push deshabilitado (polling de respaldo).");
                 return;
             }
 
@@ -54,9 +58,10 @@ public class FirebaseInitializer {
                 .setCredentials(credentials)
                 .build();
             FirebaseApp.initializeApp(options);
-            System.out.println("[FCM] Firebase Admin SDK inicializado correctamente.");
+            log.info("[FCM] Firebase Admin SDK inicializado correctamente (projectId={}).",
+                FirebaseApp.getInstance().getOptions().getProjectId());
         } catch (Exception e) {
-            System.err.println("[FCM] Error inicializando Firebase Admin SDK: " + e.getMessage());
+            log.error("[FCM] Error inicializando Firebase Admin SDK: {}", e.getMessage(), e);
         }
     }
 }

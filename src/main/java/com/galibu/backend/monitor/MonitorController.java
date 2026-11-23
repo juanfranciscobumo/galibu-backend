@@ -1,5 +1,7 @@
 package com.galibu.backend.monitor;
 
+import com.galibu.backend.notifications.NotificationService;
+import com.google.firebase.FirebaseApp;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -38,6 +40,7 @@ public class MonitorController {
     private final MetricsHistoryStore metricsHistory;
     private final AppConfigService config;
     private final TestReportService testReport;
+    private final NotificationService notifications;
 
     public MonitorController(
         RequestMetrics metrics,
@@ -52,7 +55,8 @@ public class MonitorController {
         AlertService alerts,
         MetricsHistoryStore metricsHistory,
         AppConfigService config,
-        TestReportService testReport
+        TestReportService testReport,
+        NotificationService notifications
     ) {
         this.metrics = metrics;
         this.jvm = jvm;
@@ -67,6 +71,27 @@ public class MonitorController {
         this.metricsHistory = metricsHistory;
         this.config = config;
         this.testReport = testReport;
+        this.notifications = notifications;
+    }
+
+    /**
+     * Envía un push de prueba a los dispositivos registrados de un usuario.
+     * Útil para verificar Firebase Admin y el token FCM de un teléfono concreto
+     * sin esperar a un evento real del ciclo de vida del servicio.
+     */
+    @PostMapping("/push-test")
+    public Map<String, Object> pushTest(
+        @RequestParam String userId,
+        @RequestParam(defaultValue = "Prueba de Galibu") String title,
+        @RequestParam(defaultValue = "Si ves esto, las notificaciones push funcionan.") String body
+    ) {
+        var report = notifications.send(userId, title, body, null);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("firebase", FirebaseApp.getApps().isEmpty() ? "deshabilitado" : "inicializado");
+        out.put("tokens", report.tokens());
+        out.put("sent", report.sent());
+        out.put("errors", report.errors());
+        return out;
     }
 
     @GetMapping("/data")
