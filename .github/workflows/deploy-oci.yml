@@ -29,12 +29,14 @@ jobs:
     steps:
       - name: Deploy por SSH a OCI
         uses: appleboy/ssh-action@v1.0.3
-        envs: FIREBASE_SERVICE_ACCOUNT_JSON
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
         with:
           host: ${{ secrets.OCI_HOST }}
           username: ${{ secrets.OCI_USER }}
           key: ${{ secrets.OCI_SSH_KEY }}
           port: ${{ secrets.OCI_PORT }}
+          envs: FIREBASE_SERVICE_ACCOUNT_JSON
           command_timeout: 40m
           script_stop: true
           script: |
