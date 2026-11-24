@@ -156,11 +156,7 @@ public class JobService {
             chat.postSystemMessage(saved.getId(), "Sistema",
                 "🤝 " + user.getName() + " te ha contratado directamente para '" + saved.getTitle()
                     + "'. Pueden acordar el precio y los detalles por el chat.");
-            if (chatThread) {
-                notifications.notifyUser(saved.getProfessionalId(), "Nueva consulta",
-                    "Un cliente quiere hablar contigo sobre '" + saved.getCategory()
-                        + "'. Responde desde Mensajes.", saved.getId());
-            } else {
+            if (!chatThread) {
                 notifications.notifyUser(saved.getProfessionalId(), "Nueva contratación directa",
                     "Te han contratado directamente para '" + saved.getTitle() + "'. Revisa la solicitud.", saved.getId());
                 chat.invalidateJobCache(saved.getId());
