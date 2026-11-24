@@ -345,8 +345,9 @@ public class JobService {
     public JobDto cancel(String uid, String jobId, String reason) {
         Job job = findOr404(jobId);
         requireParticipant(uid, job);
-        if ("COMPLETED".equals(job.getStatus()) || "CANCELLED".equals(job.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud ya está cerrada");
+        if ("COMPLETED".equals(job.getStatus()) || "CANCELLED".equals(job.getStatus())
+            || "IN_PROGRESS".equals(job.getStatus()) || "EN_PROGRESO".equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "No se puede cancelar un servicio en progreso o ya cerrado");
         }
         String previousStatus = job.getStatus();
         User actor = findUserOr404(uid);

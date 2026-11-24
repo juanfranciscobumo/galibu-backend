@@ -131,6 +131,11 @@ class JobServiceTest {
         ResponseStatusException conflict = assertThrows(ResponseStatusException.class,
             () -> service.cancel("client-1", "j1", null));
         assertEquals(HttpStatus.CONFLICT, conflict.getStatusCode());
+
+        j.setStatus("IN_PROGRESS");
+        ResponseStatusException inProgress = assertThrows(ResponseStatusException.class,
+            () -> service.cancel("client-1", "j1", null));
+        assertEquals(HttpStatus.CONFLICT, inProgress.getStatusCode());
     }
 
     @Test
