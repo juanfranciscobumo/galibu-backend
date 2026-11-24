@@ -350,6 +350,31 @@ public class JobService {
         return JobDto.from(saved);
     }
 
+    /**
+     * El profesional acepta una consulta directa (direct hire): pasa de
+     * NEGOTIATING a ACCEPTED. Después podrá iniciar el servicio.
+     */
+    @Transactional
+    public JobDto professionalAccept(String uid, String jobId) {
+        Job job = findOr404(jobId);
+        requireAssignedProfessional(uid, job);
+        if (!"NEGOTIATING".equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "La solicitud no está en negociación");
+        }
+        job.setStatus("ACCEPTED");
+        Job saved = jobs.save(job);
+        chat.postSystemMessage(jobId, "Sistema",
+            "El profesional aceptó la solicitud. Pueden iniciar el servicio cuando llegue.");
+        chat.invalidateJobCache(jobId);
+        if (job.getParentJobId() != null && !job.getParentJobId().isBlank()) {
+            chat.invalidateJobCache(job.getParentJobId());
+        }
+        notifications.notifyUser(job.getClientId(), "Solicitud aceptada",
+            "El profesional aceptó tu solicitud para '" + job.getTitle() + "'.", jobId);
+        return JobDto.from(saved);
+    }
+
     @Transactional
     public JobDto cancel(String uid, String jobId, String reason) {
         Job job = findOr404(jobId);

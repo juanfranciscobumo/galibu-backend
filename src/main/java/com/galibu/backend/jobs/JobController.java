@@ -105,6 +105,12 @@ public class JobController {
         return service.clientAccept(auth.getName(), id);
     }
 
+    @PostMapping("/{id}/professional-accept")
+    public JobDto professionalAccept(Authentication auth, @PathVariable String id) {
+        log.info("jobs professional-accept userId={} jobId={}", auth.getName(), id);
+        return service.professionalAccept(auth.getName(), id);
+    }
+
     @PostMapping("/{id}/reject")
     public JobDto reject(Authentication auth, @PathVariable String id) {
         log.info("jobs reject userId={} jobId={}", auth.getName(), id);
