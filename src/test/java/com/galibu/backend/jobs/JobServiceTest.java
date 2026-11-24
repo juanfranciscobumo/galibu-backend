@@ -437,6 +437,37 @@ class JobServiceTest {
     }
 
     @Test
+    void createReusesActiveDirectChatForSameProfessional() {
+        when(users.findById("client-1")).thenReturn(Optional.of(client("client-1")));
+        User pro = client("pro-1");
+        pro.setRole("PROFESSIONAL");
+        when(users.findById("pro-1")).thenReturn(Optional.of(pro));
+        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+
+        // Primera consulta: se crea.
+        CreateJobRequest req1 = new CreateJobRequest();
+        req1.setTitle("Consulta");
+        req1.setId("chat_pro-1_1");
+        req1.setProfessionalId("pro-1");
+        JobDto first = service.create("client-1", req1);
+        assertEquals("chat_pro-1_1", first.getId());
+
+        // Segunda consulta al mismo profesional: se reutiliza la existente.
+        Job existing = job("chat_pro-1_1");
+        existing.setClientId("client-1");
+        existing.setProfessionalId("pro-1");
+        existing.setStatus("NEGOTIATING");
+        when(jobs.findByClientIdOrderByCreatedAtDesc("client-1")).thenReturn(List.of(existing));
+
+        CreateJobRequest req2 = new CreateJobRequest();
+        req2.setTitle("Consulta 2");
+        req2.setId("chat_pro-1_2");
+        req2.setProfessionalId("pro-1");
+        JobDto second = service.create("client-1", req2);
+        assertEquals("chat_pro-1_1", second.getId());
+    }
+
+    @Test
     void deleteBlocksAcceptedAndInProgressJobs() {
         Job j = job("j1");
         j.setStatus("ACCEPTED");

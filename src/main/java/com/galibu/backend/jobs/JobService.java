@@ -102,6 +102,19 @@ public class JobService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo un cliente puede crear solicitudes");
         }
         rejectDuplicateActiveRequest(uid, req);
+
+        // Hilo de consulta directa (chat_...): reutilizar el activo existente
+        // para el mismo par (cliente, profesional) en vez de crear duplicados.
+        if (req.getId() != null && req.getId().startsWith("chat_")
+                && req.getProfessionalId() != null && !req.getProfessionalId().isBlank()) {
+            for (Job existing : jobs.findByClientIdOrderByCreatedAtDesc(uid)) {
+                if (existing.getId() == null || !existing.getId().startsWith("chat_")) continue;
+                if (!req.getProfessionalId().equals(existing.getProfessionalId())) continue;
+                if ("COMPLETED".equals(existing.getStatus()) || "CANCELLED".equals(existing.getStatus())) continue;
+                return JobDto.from(existing);
+            }
+        }
+
         Job job = new Job();
         job.setId(resolveJobId(req.getId()));
         job.setCategory(TextUtils.capitalizeFirst(req.getCategory() == null ? "" : req.getCategory()));
