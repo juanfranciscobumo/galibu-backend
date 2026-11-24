@@ -105,6 +105,12 @@ public class JobController {
         return service.clientAccept(auth.getName(), id);
     }
 
+    @PostMapping("/{id}/reject")
+    public JobDto reject(Authentication auth, @PathVariable String id) {
+        log.info("jobs reject userId={} jobId={}", auth.getName(), id);
+        return service.rejectApplication(auth.getName(), id);
+    }
+
     @PostMapping("/{id}/start")
     public JobDto startService(Authentication auth, @PathVariable String id) {
         log.info("jobs startService userId={} jobId={}", auth.getName(), id);

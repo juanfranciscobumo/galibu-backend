@@ -306,6 +306,41 @@ public class JobService {
         return JobDto.from(saved);
     }
 
+    /**
+     * El cliente rechaza una postulación concreta. La solicitud padre sigue
+     * abierta para recibir o mantener otras postulaciones; solo se cierra esta
+     * conversación (el historial queda visible para el profesional).
+     */
+    @Transactional
+    public JobDto rejectApplication(String uid, String jobId) {
+        Job job = findOr404(jobId);
+        if (!uid.equals(job.getClientId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "Solo el cliente puede rechazar una postulación");
+        }
+        if (job.getParentJobId() == null || job.getParentJobId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Solo se pueden rechazar postulaciones de una solicitud publicada");
+        }
+        if (!"NEGOTIATING".equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Esta postulación ya no está activa");
+        }
+        job.setStatus("CANCELLED");
+        job.setCompletionReview("El cliente rechazó la postulación");
+        Job saved = jobs.save(job);
+
+        chat.postSystemMessage(jobId, "Sistema",
+            "El cliente rechazó esta postulación. La conversación quedó cerrada.");
+        if (job.getProfessionalId() != null && !job.getProfessionalId().isBlank()) {
+            notifications.notifyUser(job.getProfessionalId(), "Postulación rechazada",
+                "El cliente rechazó tu postulación para '" + job.getTitle() + "'.", jobId);
+        }
+        chat.invalidateJobCache(jobId);
+        chat.invalidateJobCache(job.getParentJobId());
+        return JobDto.from(saved);
+    }
+
     @Transactional
     public JobDto cancel(String uid, String jobId, String reason) {
         Job job = findOr404(jobId);

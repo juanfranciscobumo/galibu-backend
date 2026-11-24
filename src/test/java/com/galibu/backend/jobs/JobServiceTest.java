@@ -410,6 +410,28 @@ class JobServiceTest {
     }
 
     @Test
+    void rejectApplicationClosesOnlyThatConversation() {
+        Job child = job("app_1");
+        child.setParentJobId("parent");
+        child.setStatus("NEGOTIATING");
+        child.setProfessionalId("pro-1");
+        child.setClientId("client-1");
+        Job parent = job("parent");
+        parent.setStatus("OPEN");
+        parent.setClientId("client-1");
+        when(jobs.findById("app_1")).thenReturn(Optional.of(child));
+        when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
+
+        JobDto rejected = service.rejectApplication("client-1", "app_1");
+
+        assertEquals("CANCELLED", rejected.getStatus());
+        // La solicitud padre sigue abierta para las demás postulaciones.
+        assertEquals("OPEN", parent.getStatus());
+        verify(chat).postSystemMessage(eq("app_1"), eq("Sistema"),
+            org.mockito.ArgumentMatchers.contains("rechaz"));
+    }
+
+    @Test
     void deleteBlocksAcceptedAndInProgressJobs() {
         Job j = job("j1");
         j.setStatus("ACCEPTED");
