@@ -1,0 +1,14 @@
+name: Diag jobs2
+on: workflow_dispatch
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          port: ${{ secrets.OCI_PORT }}
+          script: |
+            sudo podman exec galibu-db mysql -uroot -p"galibu_root_2026" galibu -e "select id, email, role from users where id in ('805ff9f6-40d2-4a65-af62-f65d939b8e40','fda10c21-a9e3-4434-87ed-7ee722e7f2b0')"
