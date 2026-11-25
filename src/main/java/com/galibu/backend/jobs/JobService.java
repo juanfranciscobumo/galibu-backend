@@ -11,6 +11,7 @@ import com.galibu.backend.users.UserRepository;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -132,6 +133,8 @@ public class JobService {
         job.setClientName(user.getName());
         job.setProHourlyRate(req.getProHourlyRate());
         job.setSource(normalizeSource(req.getSource()));
+        // Código de verificación de 6 dígitos para iniciar el servicio.
+        job.setVerificationCode(String.format("%06d", new Random().nextInt(1000000)));
         job.setPhotos(req.getPhotos());
         if (req.getProfessionalId() != null && !req.getProfessionalId().isBlank()) {
             if (uid.equals(req.getProfessionalId())) {
@@ -455,7 +458,7 @@ public class JobService {
     }
 
     @Transactional
-    public JobDto startService(String uid, String jobId) {
+    public JobDto startService(String uid, String jobId, String verificationCode) {
         Job job = findOr404(jobId);
         requireAssignedProfessional(uid, job);
         boolean isApplication = job.getParentJobId() != null && !job.getParentJobId().isBlank();
@@ -465,6 +468,11 @@ public class JobService {
         }
         if (!"ACCEPTED".equals(job.getStatus()) && !"NEGOTIATING".equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Solo se puede iniciar un servicio aceptado o en negociación");
+        }
+        // Validar código de verificación de 6 dígitos.
+        String expectedCode = job.getVerificationCode();
+        if (expectedCode == null || !expectedCode.equals(verificationCode)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Código de verificación inválido");
         }
         job.setStatus("IN_PROGRESS");
         job.setCounterOfferSender(null);

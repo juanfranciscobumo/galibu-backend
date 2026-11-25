@@ -41,6 +41,7 @@ public class JobDto {
     public Double counterOfferAmount;
     public String counterOfferSender;
     public String source;
+    public String verificationCode;
     public String photos;
     public long updatedAt;
 
@@ -75,6 +76,7 @@ public class JobDto {
         dto.setCounterOfferAmount(job.getCounterOfferAmount());
         dto.setCounterOfferSender(job.getCounterOfferSender());
         dto.setSource(job.getSource());
+        dto.setVerificationCode(job.getVerificationCode());
         dto.setPhotos(job.getPhotos());
         dto.setUpdatedAt(job.getUpdatedAt());
         return dto;

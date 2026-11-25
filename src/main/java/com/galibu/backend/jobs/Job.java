@@ -111,6 +111,9 @@ public class Job {
     @Column(name = "source", length = 20)
     private String source;
 
+    @Column(name = "verification_code", length = 6)
+    private String verificationCode;
+
     @Column(name = "photos", columnDefinition = "TEXT")
     private String photos;
 

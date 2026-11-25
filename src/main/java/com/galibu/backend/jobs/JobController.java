@@ -118,9 +118,10 @@ public class JobController {
     }
 
     @PostMapping("/{id}/start")
-    public JobDto startService(Authentication auth, @PathVariable String id) {
+    public JobDto startService(Authentication auth, @PathVariable String id,
+            @RequestBody StartServiceRequest request) {
         log.info("jobs startService userId={} jobId={}", auth.getName(), id);
-        return service.startService(auth.getName(), id);
+        return service.startService(auth.getName(), id, request.verificationCode());
     }
 
     @PostMapping("/{id}/finish")
@@ -136,6 +137,12 @@ public class JobController {
         @Max(value = 5, message = "La calificación debe estar entre 0 y 5 estrellas")
         Integer stars,
         @Size(max = 2000) String comment
+    ) {
+    }
+
+    public record StartServiceRequest(
+        @Size(min = 6, max = 6, message = "El código debe tener 6 dígitos")
+        String verificationCode
     ) {
     }
 }
