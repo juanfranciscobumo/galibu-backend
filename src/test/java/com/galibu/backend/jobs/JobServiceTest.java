@@ -143,10 +143,11 @@ class JobServiceTest {
         Job j = job("j1");
         j.setStatus("ACCEPTED");
         j.setProfessionalId("pro-1");
+        j.setVerificationCode("123456");
         when(jobs.findById("j1")).thenReturn(Optional.of(j));
         when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
 
-        service.startService("pro-1", "j1");
+        service.startService("pro-1", "j1", "123456");
 
         verify(chat).postSystemMessage(eq("j1"), eq("Sistema"),
             org.mockito.ArgumentMatchers.contains("inició el servicio"));
@@ -320,11 +321,12 @@ class JobServiceTest {
         when(jobs.findById("j1")).thenReturn(Optional.of(j));
         when(jobs.save(any(Job.class))).thenAnswer(i -> i.getArgument(0));
 
-        JobDto started = service.startService("pro-1", "j1");
+        j.setVerificationCode("123456");
+        JobDto started = service.startService("pro-1", "j1", "123456");
         assertEquals("IN_PROGRESS", started.getStatus());
 
         ResponseStatusException notAccepted = assertThrows(ResponseStatusException.class,
-            () -> service.startService("pro-1", "j1"));
+            () -> service.startService("pro-1", "j1", "123456"));
         assertEquals(HttpStatus.CONFLICT, notAccepted.getStatusCode());
 
         ResponseStatusException forbidden = assertThrows(ResponseStatusException.class,
